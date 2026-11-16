@@ -162,7 +162,7 @@ export function view(ctx, ledger, { step, guards = [], nested = [], lead = {}, e
     if (picked) Object.assign(out, { model: picked.model, modelFrom: picked.from });
     // The owner's fact from a context hold is in the brief already.
     if (round.step === "needs-context" && !round.resend && !round.fact)
-      out.todo = `append the fact under "## The fact" at the end of ${round.brief} before sending it; if the contract, the repo and memory don't hold it, ask the owner first${ownsHint(root, ledger, round.from)}`;
+      out.todo = `append the fact under "## The fact" at the end of ${round.brief} (${laneLine(root, "fact", ledger.id, ' --text "<fact>"')} does it) before sending it; if the contract, the repo and memory don't hold it, ask the owner first${ownsHint(root, ledger, round.from)}`;
     out.after = `${laneLine(root, waiting, ledger.id)} --agent <the agent's id>`;
   } else if (ledger.next === "gate" || ledger.next === "close") {
     out.run = laneLine(root, ledger.next, ledger.id);

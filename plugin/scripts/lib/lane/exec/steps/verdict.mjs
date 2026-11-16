@@ -9,7 +9,15 @@ import { nestedTrees } from "../admission.mjs";
 import { boardEvent } from "../board.mjs";
 import { buildTier, dispatchNext } from "../briefs.mjs";
 import { headOf } from "../guard/snapshot.mjs";
-import { isFlagged, laneLine, mustLedger, readReport, refuse, stepWith } from "../lane.mjs";
+import {
+  importReport,
+  isFlagged,
+  laneLine,
+  mustLedger,
+  readReport,
+  refuse,
+  stepWith,
+} from "../lane.mjs";
 import {
   coveredBy,
   leftNotes,
@@ -28,6 +36,7 @@ export function run(ctx, id) {
       `the lane expects ${expects(ledger) ?? "nothing"} now, not a verdict (next is ${ledger.next})`,
     );
   const round = ledger.rounds.at(-1);
+  if (ctx.from !== null) importReport(ctx.from, round.reportPath);
   const text = readReport(round.reportPath, "verifier");
   const left = leftNotes(ctx, text, round);
   const tip = headOf(root, ledger.branch);

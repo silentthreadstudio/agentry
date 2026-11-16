@@ -27,7 +27,7 @@ export function episodeOf(ledger, { lesson = null, usedMemories = [] } = {}) {
             : `verified (${judged.at(-1)?.verdict})`,
     `rounds: ${ledger.rounds.map((r) => `${r.step}${r.resend ? " (resent)" : ""}`).join(", ")}`,
     `verdicts: ${judged.map((r) => r.verdict).join(", ") || "none"}`,
-    `void verdicts: ${ledger.rounds.filter((r) => r.void).length}`,
+    `void verdicts: ${ledger.rounds.filter((r) => r.void && !r.voidedBy).length}`,
     `guard trips: ${guardTrips.length ? guardTrips.join(" | ") : "none"}`,
     `worktree gate: ${lastGate ? `${lastGate.exit === 0 ? "green" : "red"} ${lastGate.tier} on ${short(lastGate.commit)}` : "none"}`,
     `nested worktrees: ${ledger.nested?.length ?? 0}`,

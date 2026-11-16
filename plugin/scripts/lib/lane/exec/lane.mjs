@@ -3,7 +3,7 @@
 // starts from: the lane's ledger, its owned files, its flag and its saved reports. They live together
 // as the bottom of `exec/`, as `merge/lane.mjs` is of `merge/`: every module above may import them, and
 // they import nothing in `exec/`, so no cycle can form through them.
-import { readFileSync, statSync } from "node:fs";
+import { readFileSync, statSync, writeFileSync } from "node:fs";
 import { basename, dirname, join } from "node:path";
 import { kindOf } from "../../process/ids.mjs";
 import * as ledgers from "../../process/ledger.mjs";
@@ -108,3 +108,21 @@ export const saved = (path) => {
     return false;
   }
 };
+
+// `--from <file>` (`-` is stdin) on report and verdict: the agent's reply copied to the round's report
+// path, so the step reads it as it reads one saved there. A report already at the path that differs is
+// refused, never overwritten.
+export function importReport(from, path) {
+  let text;
+  try {
+    text = readFileSync(from === "-" ? 0 : from, "utf8");
+  } catch (e) {
+    refuse(`--from ${from === "-" ? "(stdin)" : from} cannot be read: ${e.message}`);
+  }
+  if (!text.trim()) refuse(`--from ${from === "-" ? "(stdin)" : from} is empty: nothing to save`);
+  if (!saved(path)) writeFileSync(path, text);
+  else if (readOr(path) !== text)
+    refuse(
+      `a different report already sits at ${path}: remove it to save this one, or run the step without --from`,
+    );
+}

@@ -104,9 +104,14 @@ The builder's report: {{builderReport}}
 - No command other than the gate may run longer than 10 minutes: run every engine, server, simulator or
   watcher with `agentry run --limit <dur> -- …` (with `--lock <name> --wait <dur>` for a shared lock), and
   treat hitting the limit as a finding to report, never a wait.
+- Never poll with `pgrep`, `sleep` loops or the like, and leave no timer or monitor running when you
+  report. A queued `agentry lane exec gate` waits for its slot and logs it: it is not hung, so wait for
+  its exit.
 {{#locked}}
 - Take {{lockTake}} before driving a shared editor through MCP, and drop it after
   (`agentry lock drop` with the same name).
+- Run each heavy command through `agentry run --limit <dur> --lock <name> -- …` (locks: {{lockNames}}), so
+  two lanes never run it at once.
 {{/locked}}
 
 ## Report

@@ -56,6 +56,11 @@ export function run(ctx, id) {
       : passed && ledger.state === "verifying"
         ? `past a passing verdict (${verdict.verdict})`
         : ledger.state;
+    // A parked verified lane is built and checked: the way on is its resume, then the owner's fix.
+    if (parkedVerified(ledger))
+      refuse(
+        `owns --add is for a lane still building: ${id} is parked verified (next ${ledger.hold.next}), its work built and checked, so a change to it is the owner's: resume it (${laneLine(root, "resume", id, ' --note "<why>"')}), then ${laneLine(root, "fix", id, ' --owner "<the change>"')}`,
+      );
     if (verified)
       refuse(
         `owns --add is for a lane still building: ${id} is ${where} (next ${ledger.next}); a change now is the owner's (${laneLine(root, "fix", id, ' --owner "<the change>"')})`,

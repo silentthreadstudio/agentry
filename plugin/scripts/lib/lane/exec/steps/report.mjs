@@ -16,6 +16,7 @@ import { mainGuard } from "../guard/main-guard.mjs";
 import { headOf, ownStart } from "../guard/snapshot.mjs";
 import {
   heldCopy,
+  importReport,
   isFlagged,
   saved as isSaved,
   mustLedger,
@@ -95,6 +96,13 @@ export function run(ctx, id) {
       `the lane expects ${expects(ledger) ?? "nothing"} now, not a report (next is ${ledger.next})`,
     );
   const round = ledger.rounds.at(-1);
+  if (ctx.from !== null) {
+    if (parked)
+      refuse(
+        `the lane is held by a guard and reads its saved report ${ledger.hold.report}: fix what it names, then report again without --from`,
+      );
+    importReport(ctx.from, round.reportPath);
+  }
   const saved = parked ? ledger.hold.report : heldCopy(round.reportPath);
   const named = parked ? undefined : buildNamed(round);
   const text = readReport(parked ? saved : round.reportPath, "builder");

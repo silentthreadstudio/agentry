@@ -159,8 +159,8 @@ export function renderBrief(step, values) {
 /** The repo-policy slots for dispatch `step`: the workflow file's `briefs` list for its role (`build` for a
  *  builder's step, the rebase included; `verify` for a verifier's, the resolve check included), each line a
  *  bullet, printed as written. No list, no section.
- *  With the workflow file's `locks`, the time-limit rule's lock line (`locked`): `lockTake` is the take
- *  command, the lock named when there is one, else `<name>` and the names.
+ *  With the workflow file's `locks`, the time-limit rule's lock lines (`locked`): `lockTake` is the take
+ *  command, the lock named when there is one, else `<name>` and the names; `lockNames` the names.
  *  For a rebase, `commitRules` too: the workflow file's `commits` (or null), which `rewordSlots` reads. */
 export function policySlots(spec, step) {
   const name = Object.hasOwn(TEMPLATE_OF, step) ? TEMPLATE_OF[step] : null;
@@ -176,6 +176,7 @@ export function policySlots(spec, step) {
     policyLines: bullets(lines),
     locked: locks.length > 0,
     lockTake: locks.length ? lockTake : "",
+    lockNames: locks.join(", "),
     ...(name === "rebase" && { commitRules: rulesOf(spec) }),
   };
 }

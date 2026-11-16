@@ -45,6 +45,8 @@
 //                                             change, `ownerFixes[]` recording it; its report goes as any fix's:
 //                                             the gate on the new tip under a route that skipped the verifier,
 //                                             else a recheck by the last verifier
+//   verify / recheck / final, no report yet: { type: "owner", note, at } → the round is void (`voidedBy:
+//                                             "owner"`, no budget spent) and fix (resume the last builder) on the change
 //   verified, the branch already moved: { type: "rebased", tip, changed } → as a rebase report below
 //   rebase: DONE*, guards hold, `changed`, route rebase "recheck" → resolve (a fresh verifier)
 //   rebase: DONE*, guards hold, otherwise   → gate on the new tip, or close when green on it
@@ -84,7 +86,7 @@
 // owner's answers spend no budget.
 //
 // A round in the ledger: { n, step, role, mode, final?, resend?, guard?, agent?, from?, reason?,
-// stepRun?, redo?, owner?, brief, reportPath, tip, at } plus, once reported, { report, status | verdict, void?,
+// stepRun?, redo?, owner?, brief, reportPath, tip, at } plus, once reported, { report, status | verdict, void?, voidedBy?,
 // summary?, guards?, covered?, onlyFixCommits? }, or `held: true` when the lane was held before its report
 // was read. A held lane has `hold: { for, when, stepRun, evidence, since, round, why? }` (a guard hold also
 // `reason` and `report`, the saved report a report reads again; a context hold `reason` and `report`, the
@@ -713,7 +715,7 @@ function onVerdict(ledger, round, event) {
   const { verdict, tip, gate = true, tier } = event;
   if (tip !== round.tip) {
     round.void = true;
-    if (ledger.rounds.filter((r) => r.void).length >= MAX_VOIDS)
+    if (ledger.rounds.filter((r) => r.void && !r.voidedBy).length >= MAX_VOIDS)
       return stop(
         ledger,
         `${MAX_VOIDS} void verdicts: the branch tip kept moving while its verifiers read`,
@@ -842,14 +844,24 @@ function onRebase(ledger) {
   );
 }
 
+// Is `round` a verifier's (a check of the work, not of a rebase) that has given no report yet?
+const verifierOut = (round) =>
+  ["verify", "recheck", "final"].includes(round?.step) && round.report === undefined;
+
 // The owner sends a verified lane back with a change: one round for its last builder, recorded
 // in `ownerFixes[]` with the round it went out as. The round's report goes on as any fix's (`routeBuilt`).
 // A lane the notes cap holds for the owner goes back the same way, the change its answer in `holds[]`.
 function onOwnerFix(ledger, { note, at }) {
+  const reading = last(ledger);
   if (capHeld(ledger)) {
     const { round: _n, ...kept } = ledger.hold;
     ledger.holds = [...(ledger.holds ?? []), { ...kept, resumedAt: at, note, redo: false }];
     ledger.hold = undefined;
+  } else if (ledger.state === "verifying" && verifierOut(reading)) {
+    // The verifier has not reported: its round is void, and the change goes to the builder. The owner's
+    // call spends no void of the lane's budget.
+    reading.void = true;
+    reading.voidedBy = "owner";
   } else if (ledger.state !== "verified" || !["close", "merge"].includes(ledger.next))
     throw new Error(
       `the owner's fix is for a verified lane (state ${ledger.state}, next ${ledger.next})`,

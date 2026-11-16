@@ -239,8 +239,25 @@ export function openLane(ctx, id, { found, parent, mainBranch, again = null }) {
   const noTests = ownsTestsWithoutFile(found.block, tree.path)
     ? "! owns names tests but no test file: add the test paths (exec owns <id> --set … --apply)"
     : null;
+  // `start` only: a restart or an adopt carries its own owned list and notes.
+  const noOwns =
+    !again && ledger.owned.length === 0
+      ? `! owns is empty: the builder will stop to ask for each file; add them with \`${laneLine(root, "owns", id, " --add <paths> --apply")}\``
+      : null;
+  const unflagged =
+    !again && found.block.includes("⚑") && !ledger.route.flagged
+      ? "! the contract text has ⚑ but the board item's flag is empty: set it on the board, or exec.verify may send the work past its verifier"
+      : null;
   const chain = parent ? chainOf(ledgers.list(root), parent.id) : [];
-  const overlap = [...outside, ownsOverlap(root, ledger.owned, chain), noTests, frozen, ...warnings]
+  const overlap = [
+    ...outside,
+    ownsOverlap(root, ledger.owned, chain),
+    noTests,
+    noOwns,
+    unflagged,
+    frozen,
+    ...warnings,
+  ]
     .filter(Boolean)
     .join("\n");
   const hint = proseModelHint(found.block, ledger.steps);

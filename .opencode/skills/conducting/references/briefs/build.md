@@ -44,7 +44,9 @@ They override the contract where they conflict.
 Owned files:
 {{owned}}
 
-Touch nothing else: a file outside this list is NEEDS_CONTEXT, never a quiet widening.
+Touch nothing else: a file outside this list is NEEDS_CONTEXT, never a quiet widening. Before your first
+edit, list every file you will touch; if one is outside the owned files, stop then and report NEEDS_CONTEXT
+naming it, with nothing edited.
 
 Decisions it cites, quoted from the board:
 {{decisions}}
@@ -75,9 +77,14 @@ Not this round: {{notThisRound}}
 - No command other than the gate may run longer than 10 minutes: run every engine, server, simulator or
   watcher with `agentry run --limit <dur> -- …` (with `--lock <name> --wait <dur>` for a shared lock), and
   treat hitting the limit as a finding to report, never a wait.
+- Never poll with `pgrep`, `sleep` loops or the like, and leave no timer or monitor running when you
+  report. A queued `agentry lane exec gate` waits for its slot and logs it: it is not hung, so wait for
+  its exit.
 {{#locked}}
 - Take {{lockTake}} before driving a shared editor through MCP, and drop it after
   (`agentry lock drop` with the same name).
+- Run each heavy command through `agentry run --limit <dur> --lock <name> -- …` (locks: {{lockNames}}), so
+  two lanes never run it at once.
 {{/locked}}
 - The repo's gate, as the lane records it (it refuses a dirty tree): `{{gateLine}}`
   Run the gate only as `agentry lane exec gate <id>` (it takes the gate slot); never run the gate script yourself.

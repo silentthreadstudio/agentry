@@ -5,7 +5,7 @@ import { now } from "../../fmt.mjs";
 import { expects, notesBudget, verdicts } from "../../rounds.mjs";
 import { nestedTrees, refuseAtWriterCap } from "../admission.mjs";
 import { dispatchNext } from "../briefs.mjs";
-import { laneLine, mustLedger, readReport, refuse, stepWith } from "../lane.mjs";
+import { laneLine, mustLedger, readReport, refuse, saved, stepWith } from "../lane.mjs";
 import { liveNotes, notesOf, withOpen } from "../notes.mjs";
 import { view } from "../view.mjs";
 
@@ -85,7 +85,15 @@ function ownerFix(ctx, id) {
       `${id} is held (${hold.for}): its change goes in the resume, ${laneLine(root, "resume", id, `${redo} --note "<the change>"`)}`,
     );
   }
-  if (!capped && (ledger.state !== "verified" || !["close", "merge"].includes(ledger.next)))
+  // A verifier is out and has saved no report: the owner's change voids its round and goes to the builder.
+  const round = ledger.rounds.at(-1);
+  const voiding =
+    ledger.state === "verifying" && expects(ledger) === "verdict" && !saved(round.reportPath);
+  if (
+    !capped &&
+    !voiding &&
+    (ledger.state !== "verified" || !["close", "merge"].includes(ledger.next))
+  )
     refuse(`fix --owner is for a verified lane: ${id} is ${ledger.state} (next ${ledger.next})`);
   refuseAtWriterCap(root, spec);
   const res = stepWith(ledger, { type: "owner", note: owner, at: now() });
@@ -95,6 +103,10 @@ function ownerFix(ctx, id) {
   return view(ctx, next, {
     step: "fix",
     nested: next.nested,
-    extra: { owner: next.ownerFixes.at(-1), why: res.reason },
+    extra: {
+      owner: next.ownerFixes.at(-1),
+      ...(voiding && { voided: `round ${round.n} (${round.step}): no report was saved` }),
+      why: res.reason,
+    },
   });
 }

@@ -701,6 +701,41 @@ test("owner is refused unless the lane is verified with close or merge next", ()
   assert.throws(() => step({ ...gateNext, state: "merged", next: null }, owner()), refused);
 });
 
+test("owner while a verifier is out with no report → its round is void (by the owner), a fix on the change", () => {
+  const verifying = go(lane(), report("DONE")).ledger;
+  assert.equal(expects(verifying), "verdict");
+  const res = go(verifying, owner());
+  const [, voided, fix] = res.ledger.rounds;
+  assert.deepEqual([voided.void, voided.voidedBy, voided.report], [true, "owner", undefined]);
+  assert.deepEqual(
+    [fix.step, fix.role, fix.mode, fix.owner],
+    ["fix", "build", "resume", { note: "rename it", at: "t1" }],
+  );
+  assert.deepEqual(res.ledger.ownerFixes, [{ note: "rename it", at: "t1", round: 3 }]);
+  assert.equal(expects(res.ledger), "report");
+  // The fix goes on as any: no verdict was counted, so a fresh verifier reads it.
+  const again = go(res.ledger, report("DONE"));
+  assert.equal(again.next, "verify");
+  assert.deepEqual(verdicts(again.ledger), []);
+});
+
+test("an owner's void spends none of the lane's void budget", () => {
+  let ledger = go(lane(), report("DONE")).ledger;
+  for (let i = 0; i < 3; i++) {
+    ledger = go(go(ledger, owner()).ledger, report("DONE")).ledger;
+  }
+  // Three owner voids so far; a verdict on a moved tip is the first void that counts, not the third.
+  const res = go(ledger, judge("PASS", MOVED));
+  assert.equal(res.next, "recheck");
+});
+
+test("owner while a resolve check is out is refused", () => {
+  const verifying = go(lane(), report("DONE")).ledger;
+  const resolving = structuredClone(verifying);
+  resolving.rounds.at(-1).step = "resolve";
+  assert.throws(() => step(resolving, owner()), /the owner's fix is for a verified lane/);
+});
+
 // ---- steps, runs and the owner's holds (fields 47, 48, 54) -------------------------------------------
 
 const AT = "2026-11-03T10:00:00.000Z";

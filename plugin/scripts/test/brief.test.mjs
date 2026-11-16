@@ -702,6 +702,7 @@ const VALUES = {
   policyLines: "",
   locked: false,
   lockTake: "",
+  lockNames: "",
   // the notes a recheck judges, main's branch, the range-diff a resolve check reads (recheckSlots)
   sentBack: "N1, N2",
   mainBranch: "main",
@@ -807,11 +808,58 @@ test("the time-limit rule's lock line is there only when the workflow file names
   }
 });
 
+const RUN_LOCK =
+  /^- Run each heavy command through `agentry run --limit <dur> --lock <name> -- …` \(locks: (.*)\)/m;
+
+test("a repo with locks tells every builder and verifier to run heavy commands through agentry run --lock", () => {
+  for (const step of ["build", "fix", "continue", "verify", "recheck", "final"]) {
+    const render = (spec) => renderBrief(step, { ...VALUES, ...policySlots(spec, step) });
+    assert.doesNotMatch(render({}), RUN_LOCK, `${step}: no locks, no line`);
+    assert.equal(RUN_LOCK.exec(render({ locks: { editor: 1, sim: 2 } }))?.[1], "editor, sim", step);
+  }
+});
+
+test("every builder and verifier brief says never to poll or leave a timer, and that a queued gate is not hung", () => {
+  for (const step of ["build", "fix", "needs-context", "continue", "verify", "recheck", "final"]) {
+    const text = renderBrief(step, VALUES);
+    assert.match(text, /Never poll with `pgrep`, `sleep` loops/, step);
+    assert.match(text, /leave no timer or monitor running/, step);
+    assert.match(
+      text,
+      /queued `agentry lane exec gate` waits for its slot and logs it: it is not hung/,
+      step,
+    );
+  }
+});
+
+test("the build brief asks for the list of files before the first edit, and NEEDS_CONTEXT for one outside owns", () => {
+  const text = renderBrief("build", VALUES);
+  assert.match(
+    text,
+    /Before your first\s+edit, list every file you will touch; if one is outside the owned files/,
+  );
+  assert.match(text, /report NEEDS_CONTEXT\s+naming it, with nothing edited/);
+  assert.match(renderBrief("fix", { ...VALUES, fail: true }), /list every file you will touch/);
+});
+
+test("the supplied-context block does not say a fact is there: it names the section to look for", () => {
+  const needed = renderBrief("needs-context", { ...VALUES, needed: true });
+  assert.match(
+    needed,
+    /If this brief ends with a section "The fact", that is the conductor's answer/,
+  );
+  assert.match(
+    needed,
+    /If it has no such section, no fact was supplied: report NEEDS_CONTEXT again/,
+  );
+  assert.doesNotMatch(needed, /The conductor added it/);
+});
+
 const POLICY_HEAD = "## Repo policy (overrides the contract where they differ)";
 const BUILDER_STEPS = ["build", "fix", "needs-context", "continue"];
 const VERIFIER_STEPS = ["verify", "recheck", "final"];
 // policySlots of a workflow file with no locks: no lock line.
-const NO_LOCK = { locked: false, lockTake: "" };
+const NO_LOCK = { locked: false, lockTake: "", lockNames: "" };
 
 test("policySlots gives each role its own lines as bullets, and nothing for a role with no list", () => {
   const spec = { briefs: { build: ["Use pnpm.", "No `npm`."], verify: ["Read the changelog."] } };
@@ -938,7 +986,7 @@ test("a fix brief wraps the build brief; its sections follow the round's kind", 
   const guard = renderBrief("fix", { ...VALUES, guard: true });
   assert.match(guard, /The lane refused your last report \(\/m\/r1\.report\.md\): a reason/);
   const needed = renderBrief("needs-context", { ...VALUES, needed: true });
-  assert.match(needed, /under "The fact"/);
+  assert.match(needed, /a section "The fact"/);
   const resent = renderBrief("build", { ...VALUES, resend: true });
   assert.match(
     resent,
