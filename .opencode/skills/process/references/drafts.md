@@ -70,4 +70,11 @@ The owner may correct a draft at apply: `agentry board draft apply <n> --answer 
 edited text, and with `--apply` writes it and keeps it on the draft's line, with the text it replaced under
 `edited`. `--why` goes with a decision draft only (a rule draft exits 2).
 
+Two guards show in the preview as `!` lines. A decision whose why fills empty prints `! why is empty`, and
+`--apply` exits 2 until the owner gives one with `--why "<text>"`; an empty rejected column prints
+`! rejected is empty` and is only a note. A rule that matches, or closely resembles, a line already in its section
+(case, `**`, a date in parentheses and spacing set aside) prints `! similar rule already at <file>:<line>`, and
+`--apply` exits 2 unless `--force` is given. When the JSON is long or awkward to quote, pass it as
+`--fields @<path>` or `--fields -` (stdin); `agentry board add --fields` takes the same forms.
+
 Exit 2 leaves the draft pending. Never commit; the owner reviews the diff.
