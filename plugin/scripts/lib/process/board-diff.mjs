@@ -111,6 +111,9 @@ function rowParts(line) {
   };
 }
 
+// Cell texts that read alike: padding around a cell is not a change.
+const same = (a, b) => typeof a === "string" && typeof b === "string" && a.trim() === b.trim();
+
 // A differing row of `item`'s table: null when only its changed fields' cells differ.
 function rowWhy(ctx, item, n, a, b, before) {
   const [x, y] = [rowParts(a), rowParts(b)];
@@ -119,7 +122,9 @@ function rowWhy(ctx, item, n, a, b, before) {
     return `the ${item.id} row has a different number of cells`;
   const header = md.tables(before).find((t) => t.rows.some((r) => r.line === n))?.header ?? [];
   const whys = x.cells
-    .map((cell, k) => (cell === y.cells[k] ? null : cellWhy(ctx, item, header[k] ?? `#${k + 1}`)))
+    .map((cell, k) =>
+      same(cell, y.cells[k]) ? null : cellWhy(ctx, item, header[k] ?? `#${k + 1}`),
+    )
     .filter(Boolean);
   return whys.length ? whys.join("; ") : null;
 }

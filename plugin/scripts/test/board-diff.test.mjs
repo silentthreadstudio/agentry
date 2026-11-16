@@ -165,10 +165,21 @@ test("a cell no field reads, or one that changed but reads the same, is other", 
   });
   assert.deepEqual(bold.cells, []);
   assert.match(bold.other[0].what, /T1: the "Status" cell's text changed, but it reads the same/);
+});
+
+test("a cell that differs only in its padding is no change, and a real change beside it still is", () => {
   const padded = diffOf({
-    "plan/BOARD.md": boardWith(["| T1   | S1     | todo   |", "| T1   | S1     | todo |"]),
+    "plan/BOARD.md": boardWith(["| T1   | S1     | todo   |", "| T1   | S1     |  todo |"]),
   });
-  assert.match(padded.other[0].what, /reads the same/);
+  assert.deepEqual(padded, { cells: [], other: [] });
+  const beside = diffOf({
+    "plan/BOARD.md": boardWith(
+      ["| T1   | S1     | todo   |", "| T1   | S1     |   todo |"],
+      ["| one   |", "| uno   |"],
+    ),
+  });
+  assert.equal(beside.other.length, 1);
+  assert.match(beside.other[0].what, /"Title" cell changed, and no field reads it/);
 });
 
 test("a lifecycle cell next to a hand edit on the same row still names the hand edit", () => {
