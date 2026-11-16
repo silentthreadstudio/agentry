@@ -1,27 +1,35 @@
 // ready — `board status --ready`: the open tasks of each sprint, and for each whether its contract is
 // written down and its dependencies are done. A task with both is ready to `lane exec`. Read only.
 //
-//   readyView({ root, spec, model })  -> [{ id, name, tasks: [{ id, status, contract, deps }] }]
+//   readyView({ root, spec, model, sprint?, startable? })
+//     -> [{ id, name, tasks: [{ id, title, flag, status, contract, deps }] }]   `sprint` keeps one parent's
+//     group; `startable` keeps the planned tasks with a contract and every dependency done
 //   renderReady({ name, view })       -> text, every line within WIDTH columns
 import { findContract } from "./contract.mjs";
 import { WIDTH, columns, fit } from "./render.mjs";
 import { withId } from "./rules/structure.mjs";
+import { flaggedItem } from "./spec/workflow.mjs";
 import { depsOf, titleOf, workKind } from "./status.mjs";
 
 /** Open (planned or active) tasks grouped by their parent, in board order; `contract` is whether
- *  `findContract` finds exactly one, `deps` whether every dependency is done. */
-export function readyView({ root, spec, model }) {
+ *  `findContract` finds exactly one, `deps` whether every dependency is done, `flag` whether the board
+ *  flags the task (`exec.flagField`). */
+export function readyView({ root, spec, model, sprint, startable = false }) {
   const work = workKind(spec);
   const deps = depsOf(spec, model, work);
   const groups = new Map();
   for (const item of model.kinds[work]?.items ?? []) {
     if (item.phase !== "planned" && item.phase !== "active") continue;
+    if (sprint !== undefined && (item.parent ?? "") !== sprint) continue;
     const task = {
       id: item.id,
+      title: titleOf(spec, item) ?? null,
+      flag: flaggedItem(spec, model, item.id, work),
       status: item.status ?? item.phase,
       contract: findContract({ root, spec, id: item.id, kind: work, model }).status === "found",
       deps: deps(item).every((d) => d.phase === "done"),
     };
+    if (startable && !(item.phase === "planned" && task.contract && task.deps)) continue;
     groups.set(item.parent ?? "", [...(groups.get(item.parent ?? "") ?? []), task]);
   }
   return [...groups].map(([id, tasks]) => {

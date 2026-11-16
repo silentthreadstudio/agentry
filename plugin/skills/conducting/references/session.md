@@ -106,7 +106,7 @@ The parent `moved`, `landed`, or `is stopped` (closed or gone); for a parent tha
 The recommendation is yours, not the script's: the single next step. A held lane comes first: show the owner
 its evidence and ask for the answer (it goes in `--note` as the owner said it; never resume on their behalf).
 An idle lane next: check on its builder. Then the nudges (a drift row already names its command), then the
-next ready task, then `/agentry:close` when only drafts remain.
+next startable task (`agentry board status --ready --startable`), then `/agentry:close` when only drafts remain.
 
 ## `agentry lane session close`
 
