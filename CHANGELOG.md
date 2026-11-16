@@ -6,6 +6,64 @@ scheme is pragmatic: patch releases carry fixes, docs, and small additions.
 
 ## [Unreleased]
 
+### Added
+
+- `lane exec fact <id> --text "<fact>"` writes the answer a needs-context builder asked for into its brief under
+  `## The fact`; a second call replaces the section. The fix brief now says what to do when no fact was supplied.
+- `lane exec report` and `lane exec verdict` take `--from <file>` (or `-` for stdin) and save that text as the
+  round's report before reading it.
+- `lane exec start` warns when a contract owns no file, and when the contract names a flag the board item does
+  not carry. `lane exec fix <id> --owner` is accepted on a lane whose verifier saved no report (it voids that
+  round), and `lane exec owns --add` on a parked verified lane says why it refuses and what to run instead.
+- Verifier and final briefs list the owner's pending drafts, and build and verify briefs tell the agent never to
+  poll with `pgrep` or `sleep` loops and to run heavy commands through `agentry run --lock`.
+- `agentry lane` with no subcommand prints the lane index (exit 0). `agentry lane session start` is the call
+  the start and close commands and the conductor prompt name.
+- `board draft apply` refuses a decision with no why until `--why` gives one, and refuses a rule that closely
+  resembles a line already in its section unless `--force` is given; the preview shows both as `!` lines.
+  `board draft add` and `board add` take `--fields @<path>` or `--fields -` (stdin) besides inline JSON.
+- `board set <kind> <id> sprint=<id> --apply` moves the row between the parent files in one write, so the board
+  check stays green. `board status --ready` takes `--sprint <id>` and `--startable` (planned tasks with a
+  contract and no open dependency); `/agentry:start` uses it.
+- Status and session JSON rows carry a `title` key beside each id, and the text lines print the title next to
+  the id. `lane session start` lists every held and parked lane, and wraps a long reason instead of cutting it.
+- `lane merge --status` says whether a land is running: `landing <id> · step <s> · since <t> · alive|dead`, or
+  `no land running` (`--json` too). The land records its process in the ledger from its set-aside on; a land
+  begun by an older version reads `unknown`.
+- `lane merge <id> --preflight` prints an `owns` row: the files the branch changed against the lane's owned
+  files, as `✓ owns  N files inside owns` or `! owns  K outside: a, b → agentry lane exec owns <id> --add a,b`.
+  The land prints it as a warning only. `merge.sidecars` in the workflow file (for example `[".uid", ".import"]`,
+  default none) counts `x.gd.uid` as owned when `x.gd` is.
+- `cleanup.keep` in the workflow file: ignored files matching its globs are copied to
+  `.agentry/run/process/runs/<id>/kept/<path>` before any removal, and the path is printed. The land's cleanup,
+  `lane sweep`, `lane exec cut` and `lane exec restart` all honour it. `lane merge <id> --cleanup --keep-ignored`
+  copies every ignored file that is not disposable the same way instead of refusing.
+- Each step of a land prints its row on stderr as it finishes, and the gate's log path before the gate starts.
+
+### Changed
+
+- While a land holds main, every Agentry writer refuses with exit 2, naming the land and its step
+  (`<id> is landing (step <s>)`) and pointing at `agentry lane merge --status`: the exec steps `report`,
+  `verdict`, `gate`, `fix`, `resume`, `hold`, `owns --apply`, `close` and `reverify`, `board add|set|fix
+  --apply` and `board draft apply --apply`. A land whose process has died says so and names the resume and
+  `--resolve` lines. A plain `git commit` on main during a land is not stopped (there is no hook): do not make
+  one.
+- After a red gate or a refused gate on a dirty main, the next step says to land again (it sets the open lanes'
+  board writes aside again) and names `--drop-carry` for a write that hits the same cell.
+- A cell that differs only in surrounding whitespace is no change to the board diff, so a padding-only edit no
+  longer stops a land as a stray write.
+- A builder's status line is read past the first five lines of a report when exactly one line is only a status
+  token; a bulleted or quoted line is never taken for it.
+- `cleanup.disposable` is no longer required when `cleanup` is given: `cleanup` takes `disposable`, `keep` or
+  both.
+
+### Fixed
+
+- `lane merge <id> --cleanup`, `lane sweep` and the other callers of the worktree removal now treat a lane branch
+  as landed when the ledger records `merge.tip` equal to the branch tip and every planned pick is in `landed` on
+  main, before the patch comparison. A pick whose hunk context differs on main, or a file merged by union, no
+  longer keeps the branch.
+
 ## [0.4.2] — 2026-11-06
 
 ### Added
