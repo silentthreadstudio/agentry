@@ -454,6 +454,7 @@ says `stacked on T1; restacks: N`.
   files stay protected for the other lanes; `resume` checks main the same way: an uncommitted edit made while
   a lane was held is undone before it goes on, and a commit touching its files sends it to `exec restart <id>
   --carry`.
+- **A conductor commit.** A commit on main that includes open lanes' uncommitted lifecycle cells (status, verdict, commit) is safe: the guard follows content, so those lanes keep going, and a later land finds the cells already committed. Commit between lands, never during one (a land holds main: `agentry lane merge --status`; every Agentry writer refuses meanwhile, and a plain `git commit` is not stopped by any hook).
 - **Trust boundary.** The guard catches a builder that slips into the main checkout; it is not a sandbox. It
   trusts `.agentry/run/` as Agentry's steps wrote it and checks each ledger's claims against git where git can
   say, so a planted ledger naming a SHA excuses nothing. A builder that forges a whole merge record, or edits
