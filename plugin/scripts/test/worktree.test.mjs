@@ -165,6 +165,31 @@ test("remove ignores a land record that proves less: another tip, a pick not on 
   }
 });
 
+test("remove keeps a branch whose record is a cut's: its land holds only the files the owner kept", () => {
+  const made = create(repo.dir, { id: "T-1", base: "main" });
+  commitFile(made.path, "a.txt", "kept\n", "feat: a");
+  const tip = commitFile(made.path, "b.txt", "dropped work\n", "feat: b");
+  git(repo.dir, "read-tree", "main");
+  git(repo.dir, "checkout", tip, "--", "a.txt");
+  const kept = git(
+    repo.dir,
+    "commit-tree",
+    git(repo.dir, "write-tree"),
+    "-p",
+    "main",
+    "-m",
+    "cut: a",
+  );
+  git(repo.dir, "reset", "-q", "--hard", "main");
+  git(repo.dir, "cherry-pick", kept);
+  const picked = git(repo.dir, "rev-parse", "HEAD");
+  const cut = { cut: true, planned: [kept], landed: [picked], tip };
+  const res = remove(repo.dir, { ...made, merge: cut });
+  assert.equal(res.branchDeleted, false);
+  assert.match(res.reason, /not on main/);
+  assert.notEqual(git(repo.dir, "branch", "--list", "agentry/T-1"), "");
+});
+
 test("remove takes down a locked worktree (-f -f)", () => {
   const made = create(repo.dir, { id: "T-1", base: "main" });
   git(repo.dir, "worktree", "lock", "--reason", "agent running", made.path);

@@ -147,9 +147,11 @@ function onMain(root, onto, branch) {
 // Did the land the ledger records (`merge`) put this branch on `onto`: its tip is the tip the land planned
 // from, and every pick the land planned is in `landed`, on `onto`'s history. `git cherry` can read a landed
 // branch as unlanded (a pick whose hunk context differs on main, a file merged by union), the land's own
-// record cannot. A record that proves less is no proof.
+// record cannot. A record that proves less is no proof: a cut's lands one synthetic commit holding only the
+// files the owner kept, and a resolved record (`how`) was not a plain land, so neither says the branch landed.
 function landedByLedger(root, onto, tip, merge) {
   const { planned, landed } = merge ?? {};
+  if (merge?.cut || merge?.how) return false;
   if (merge?.tip !== tip || !Array.isArray(planned) || !Array.isArray(landed)) return false;
   if (planned.length === 0 || landed.length !== planned.length) return false;
   return landed.every((sha) => git(root, ["merge-base", "--is-ancestor", sha, onto]).status === 0);
