@@ -10,8 +10,10 @@ import { spawnSync } from "node:child_process";
 import {
   chmodSync,
   existsSync,
+  lstatSync,
   mkdirSync,
   readFileSync,
+  readlinkSync,
   rmSync,
   symlinkSync,
   writeFileSync,
@@ -645,6 +647,27 @@ for (const [label, ignore, disposable, keep, file] of [
     assert.ok(!existsSync(path));
   });
 }
+
+test("a kept folder holding a link to a directory copies the link as a link, and the cleanup goes on", () => {
+  const path = landedIgnoring("dist/\n");
+  plant(path, "dist/game.zip");
+  const target = join(repo.dir, "elsewhere");
+  mkdirSync(target);
+  symlinkSync(target, join(path, "dist", "link-out"));
+  const res = cleanup(repo.dir, {
+    branch: "b",
+    main: "main",
+    fallbackPath: path,
+    keep: ["dist/**"],
+    into: keptDir(),
+  });
+  assert.equal(res.ok, true, JSON.stringify(res));
+  assert.ok(res.copied.includes("dist/game.zip"));
+  const copy = join(keptDir(), "dist", "link-out");
+  assert.equal(lstatSync(copy).isSymbolicLink(), true);
+  assert.equal(readlinkSync(copy), target);
+  assert.ok(!existsSync(path));
+});
 
 test("a copy that fails keeps the worktree: nothing is removed", () => {
   const path = landedIgnoring("exports/\n");

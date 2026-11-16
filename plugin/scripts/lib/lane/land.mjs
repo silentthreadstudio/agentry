@@ -7,7 +7,16 @@
 // Every git call is an argv array, never a shell line (a zsh variable that did not split once turned a
 // cherry-pick into a silent no-op), and every one reads its own exit code. A git refusal is an answer
 // (`{ ok: false, reason }`), not a throw: the stepper turns it into a red row. Node built-ins only.
-import { cpSync, existsSync, mkdirSync, readFileSync, readdirSync } from "node:fs";
+import {
+  cpSync,
+  existsSync,
+  lstatSync,
+  mkdirSync,
+  readFileSync,
+  readdirSync,
+  readlinkSync,
+  symlinkSync,
+} from "node:fs";
 import { dirname, join } from "node:path";
 import { isAncestor as ancestor, commitOf, mergeBase } from "../process/git.mjs";
 import { globMatch } from "../process/glob.mjs";
@@ -494,7 +503,10 @@ export function keepIgnored(dir, into, { keep = [], all = false, disposable = []
     }
     for (const file of files) {
       mkdirSync(dirname(join(into, file)), { recursive: true });
-      cpSync(join(dir, file), join(into, file), { verbatimSymlinks: true });
+      const from = join(dir, file);
+      // A link is copied as a link: `cpSync` without `recursive` refuses one that points at a directory.
+      if (lstatSync(from).isSymbolicLink()) symlinkSync(readlinkSync(from), join(into, file));
+      else cpSync(from, join(into, file));
     }
   } catch (e) {
     return { error: e.message };
