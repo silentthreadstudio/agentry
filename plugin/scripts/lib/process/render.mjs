@@ -23,6 +23,10 @@ export const fit = (text, n) => {
   const chars = [...String(text)];
   return chars.length <= n ? chars.join("") : `${chars.slice(0, Math.max(0, n - 1)).join("")}…`;
 };
+/** `id · title`, the title cut to `max` columns; the id alone when there is no title or no room for 4
+ *  columns of it. */
+export const tagged = (id, title, max = 28) =>
+  title && max >= 4 ? `${id} · ${fit(title, max)}` : String(id);
 const pad = (text, n) => fit(text, n).padEnd(n);
 const widest = (xs) => Math.max(0, ...xs.map((x) => [...x].length));
 
@@ -169,16 +173,25 @@ function blockLines(view, s, clean = false) {
   const verify = new Set(view.onYou.map((x) => x.id));
   const groups = new Map();
   for (const x of view.inFlight) groups.set(x.status, [...(groups.get(x.status) ?? []), x]);
-  const flight = [...groups]
-    .sort(([, a], [, b]) => verify.has(a[0].id) - verify.has(b[0].id))
+  const byStatus = [...groups].sort(([, a], [, b]) => verify.has(a[0].id) - verify.has(b[0].id));
+  const flight = byStatus
     .map(([status, xs]) => `${xs.map((x) => x.id).join(" ")} ${status}`)
     .join(" · ");
+  // With titles, one row per task: `id · title` cut to fit, then its status.
+  const flightRows = view.inFlight.some((x) => x.title)
+    ? byStatus.flatMap(([status, xs]) =>
+        xs.map((x) => {
+          const room = WIDTH - LABEL - status.length - 2;
+          return `${tagged(x.id, x.title, room - [...x.id].length - 3)}  ${status}`;
+        }),
+      )
+    : [line(flight)];
   // Glyph-led entries, as many as fit, then "+N".
   const onYou = [];
   let used = 0;
   view.onYou.forEach((x, n) => {
     const work = view.inFlight.some((f) => f.id === x.id);
-    const text = work ? x.id : `${x.id} ${x.status}`;
+    const text = `${tagged(x.id, x.title, 24)}${work ? "" : ` ${x.status}`}`;
     const more = view.onYou.length - n - 1;
     const room = WIDTH - LABEL - used - (more ? 5 : 0);
     if (used < 0 || [...text].length + 2 > room) {
@@ -196,7 +209,7 @@ function blockLines(view, s, clean = false) {
   const sprints = view.ahead.map((x) => `${x.id} ${x.done}/${x.total}`);
   const ahead = [...top(sprints, 4), ...(view.parked ? [`${view.parked} parked`] : [])].join(" · ");
   const rows = {
-    flight: row("In flight", line(flight), s),
+    flight: flightRows.map((text, n) => row(n ? "" : "In flight", text, s)),
     onYou: row("On you", onYou.length ? onYou.join("  ") : "—", s),
     blocked: row(
       "Blocked",
@@ -214,7 +227,7 @@ function blockLines(view, s, clean = false) {
       ...(view.blocked.length ? [rows.blocked] : []),
       ...(view.ahead.length || view.parked ? [rows.ahead] : []),
     ];
-  return [rows.flight, rows.onYou, ...side, rows.blocked, rows.ahead];
+  return [...rows.flight, rows.onYou, ...side, rows.blocked, rows.ahead];
 }
 
 const SHOWN = 4;
@@ -225,7 +238,7 @@ const SHOWN = 4;
 function driftLines(view, s) {
   const nudges = view.nudges ?? [];
   const rows = nudges.slice(0, SHOWN).map((n) => {
-    const subject = n.id ?? basename(n.path ?? n.branch ?? "");
+    const subject = n.id ? tagged(n.id, n.title) : basename(n.path ?? n.branch ?? "");
     return `! ${n.kind} ${subject} → ${n.command}`;
   });
   if (nudges.length > SHOWN) rows.push(`+${nudges.length - SHOWN} more: /agentry:board`);

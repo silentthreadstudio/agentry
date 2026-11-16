@@ -88,12 +88,12 @@ test("the view: now with progress, in flight, on you, blocked, ahead and parked"
     [["K0", "Groundwork", "doing", 3, 4, 1]],
   );
   assert.deepEqual(view.inFlight, [
-    { id: "K0-4", status: "verify" },
-    { id: "H2", status: "doing" },
+    { id: "K0-4", status: "verify", title: "Check the setup after a restart" },
+    { id: "H2", status: "doing", title: "Second lane" },
   ]);
   assert.deepEqual(view.onYou, [
-    { kind: "task", id: "K0-4", status: "verify" },
-    { kind: "question", id: "Q2", status: "open" },
+    { kind: "task", id: "K0-4", status: "verify", title: "Check the setup after a restart" },
+    { kind: "question", id: "Q2", status: "open", title: "Ship a beta first?" },
   ]);
   assert.deepEqual(view.blocked, [
     { id: "H1", by: ["K0"] },
@@ -261,7 +261,14 @@ test("status: the blocks in order, findings, the legend; no line wider than the 
     .map((l) => l.slice(0, 11).trim())
     .filter((l) => /^[A-Z]/.test(l));
   assert.deepEqual(labels, ["Release", "Now", "In flight", "On you", "Blocked", "Ahead"].slice(1));
-  assert.match(text, /^On you {5}◆ K0-4 {2}\? Q2 open$/m);
+  assert.match(
+    text,
+    /^In flight {2}H2 · Second lane {2}doing\n {11}K0-4 · Check the setup after a restart {2}verify$/m,
+  );
+  assert.match(
+    text,
+    /^On you {5}◆ K0-4 · Check the setup after a… {2}\? Q2 · Ship a beta first\? open$/m,
+  );
   assert.match(text, /^■ done {2}◆ verify/m);
   assert.ok(cols(text) <= WIDTH);
   assert.ok(!text.includes(ESC), "no color off a TTY");
@@ -422,7 +429,7 @@ test("the view carries nudges and the pending draft count, and status shows both
   assert.match(text, /^ {13}<id>\|--keep "<why>" · remove: git worktree remove$/m);
   assert.match(text, /^ {13}\.claude\/worktrees\/agent-q1$/m);
   assert.doesNotMatch(text, /unlisted-worktree[^\n]*\/agentry:exec/);
-  assert.match(text, /^ {11}! started-by-hand T1 → \/agentry:exec T1$/m);
+  assert.match(text, /^ {11}! started-by-hand T1 · The first → \/agentry:exec T1$/m);
   assert.match(text, /^Drafts {5}1 pending · \/agentry:board draft list$/m);
 });
 
@@ -513,4 +520,19 @@ test("a nudge wider than its row wraps between words: the command is whole", () 
     .replace(/\s+/g, " ");
   assert.ok(joined.includes(command), text);
   assert.ok(cols(text) <= WIDTH, text);
+});
+
+test("a long title is cut so the id and the status stay whole within the terminal width", () => {
+  const { spec, model, report, work, root } = board("evidence-board");
+  const view = statusView({ root, spec, model });
+  view.inFlight = [
+    { id: "H2", status: "doing", title: "A title that runs on well past any row ".repeat(4) },
+  ];
+  const text = renderStatus({ spec, report, view, work, subtitle: "" });
+  const row = text.split("\n").find((l) => l.startsWith("In flight"));
+  assert.match(
+    row,
+    /^In flight {2}H2 · A title that runs on well past any row A title.*… {2}doing$/,
+  );
+  assert.ok([...row].length <= WIDTH);
 });

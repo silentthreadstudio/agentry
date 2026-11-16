@@ -53,7 +53,7 @@ test("start prints the Now sprint, the nudges, the drafts and the mode in at mos
   assert.ok(lines.every((l) => [...l].length <= 80));
   assert.match(res.stdout, /session start · mode night/);
   assert.match(res.stdout, /^now: S1 0\/3$/m);
-  assert.match(res.stdout, /in flight: T1 \(doing\), T3 \(verify\)/);
+  assert.match(res.stdout, /in flight: T1 · The first \(doing\), T3 · The third \(verify\)/);
   assert.match(res.stdout, /drift: unlisted-worktree .*→ land: lane merge <id> --branch /);
   assert.match(res.stdout, /drafts: 1 pending → \/agentry:close/);
   assert.match(res.stdout, /conductor prompt: .*CONDUCTOR\.md/);
@@ -86,7 +86,7 @@ test("start puts the count before a long name, prints the note, and lists a ques
   assert.match(res.stdout, /^now: S1 0\/3 · A sprint whose name .*…$/m);
   assert.match(res.stdout, /^note: Read it first\.$/m);
   assert.match(res.stdout, /^ {6}Then the docs\.$/m);
-  assert.match(res.stdout, /^on you: .*Q1 \(open\)/m);
+  assert.match(res.stdout, /^on you: .*Q1 · Ship it\? \(open\)/m);
   assert.doesNotMatch(res.stdout, /open questions:/);
 });
 
@@ -484,7 +484,7 @@ test("a parked lane prints its note, its evidence when the hold has one, and the
   ]);
 });
 
-test("parked and held lanes share the cap of 3: the fourth is counted", () => {
+test("parked and held lanes are all listed, none counted as more", () => {
   const root = fresh();
   heldLedger(root, "H1");
   for (const id of ["P1", "P2", "P3"]) heldLedger(root, id, { for: "later", evidence: null });
@@ -493,8 +493,9 @@ test("parked and held lanes share the cap of 3: the fourth is counted", () => {
   const rows = res.stdout.split("\n").filter((l) => /^(held|parked): /.test(l));
   assert.deepEqual(
     rows.map((l) => l.split(" ").slice(0, 2).join(" ")),
-    ["held: H1", "parked: P1", "parked: P2", "held: +1"],
+    ["held: H1", "parked: P1", "parked: P2", "parked: P3"],
   );
+  assert.doesNotMatch(res.stdout, /\+\d+ more/);
 });
 
 test("start prints a guard hold with its reason and the report step, never the resume line (field 75)", () => {
@@ -518,8 +519,11 @@ test("start prints a guard hold with its reason and the report step, never the r
   ]);
   assert.doesNotMatch(res.stdout, /exec resume G1/);
   const held = lines.filter((l) => l.startsWith("held: "));
-  assert.equal(held.length, 4, "the guard hold shares the cap of three");
-  assert.equal(held.at(-1), "held: +1 more → lane session start --json");
+  assert.deepEqual(
+    held.map((l) => l.split(" ")[1]),
+    ["G1", "H1", "H2", "H3"],
+    "the guard hold and every other one are listed",
+  );
   const data = JSON.parse(session(root, "start", "--json").stdout).held.find((h) => h.id === "G1");
   assert.deepEqual(
     [data.for, data.reason, data.resume],
@@ -550,14 +554,14 @@ test("start prints a context hold in exec show's held form, its reason uncut, an
   );
 });
 
-test("start shows three held lanes and counts the fourth", () => {
+test("start shows every held lane, however many", () => {
   const root = fresh();
   for (const id of ["H1", "H2", "H3", "H4"]) heldLedger(root, id);
   const res = session(root, "start");
   assert.equal(res.status, 0, res.stderr);
   const held = res.stdout.split("\n").filter((l) => l.startsWith("held: "));
   assert.equal(held.length, 4);
-  assert.equal(held[3], "held: +1 more → lane session start --json");
+  assert.match(held[3], /^held: H4 for the owner/);
   assert.doesNotMatch(res.stdout, /^lanes: /m);
   assert.equal(JSON.parse(session(root, "start", "--json").stdout).held.length, 4);
 });
@@ -1203,4 +1207,62 @@ test("close names a ledger file it cannot read instead of dropping its calls sil
     '{"v":1,"id":"T1","calls":[{"n":1',
     "never written over",
   );
+});
+
+test("a parked lane's long why wraps onto indented lines, whole, before its evidence and resume", () => {
+  const root = fresh();
+  const why =
+    "waits for the API to settle, the vendor to answer, and the owner to pick one of the two plans on the table";
+  heldLedger(root, "P1", { for: "later", when: "during", evidence: null, why });
+  const res = session(root, "start");
+  const lines = res.stdout.split("\n");
+  const at = lines.findIndex((l) => l.startsWith("parked: P1"));
+  const resume = lines.findIndex((l, i) => i > at && l.startsWith("  → lane exec resume P1"));
+  const text = lines
+    .slice(at, resume)
+    .map((l, i) => (i ? l.slice(2) : l))
+    .join(" ");
+  assert.equal(text, `parked: P1 since ${hhmm(SINCE)}: "${why}"`);
+  assert.ok(resume - at >= 2, "wrapped onto more than one line");
+  assert.ok(lines.slice(at, resume).every((l) => [...l].length <= 80));
+  assert.ok(lines.slice(at + 1, resume).every((l) => l.startsWith("  ")));
+});
+
+test("the 40-line cap counts held and parked lanes but never hides one", () => {
+  const root = fresh();
+  const ids = Array.from({ length: 14 }, (_, i) => `H${i + 1}`);
+  for (const id of ids) heldLedger(root, id);
+  const res = session(root, "start");
+  assert.equal(res.status, 0, res.stderr);
+  for (const id of ids) assert.match(res.stdout, new RegExp(`^held: ${id} for the owner`, "m"));
+  assert.match(res.stdout, /^.* · session start/);
+  assert.doesNotMatch(res.stdout, /\+\d+ more/);
+});
+
+test("the held, parked and drift lines carry the item's title beside its id, cut to fit", () => {
+  const root = fresh();
+  heldLedger(root, "T1");
+  heldLedger(root, "T2", { for: "later", evidence: null });
+  const res = session(root, "start");
+  const lines = res.stdout.split("\n");
+  assert.ok(
+    lines.includes(`held: T1 · The first for the owner, after step 1 of 2, since ${hhmm(SINCE)}`),
+    res.stdout,
+  );
+  assert.ok(lines.includes(`parked: T2 · The second since ${hhmm(SINCE)}`), res.stdout);
+  assert.ok(lines.every((l) => [...l].length <= 80));
+  const data = JSON.parse(session(root, "start", "--json").stdout);
+  assert.deepEqual(
+    data.held.map((h) => [h.id, h.title]),
+    [
+      ["T1", "The first"],
+      ["T2", "The second"],
+    ],
+  );
+});
+
+test("a drift line about a board item carries its title, the command whole", () => {
+  const res = session(fresh(), "start");
+  assert.match(res.stdout, /^drift: started-by-hand T1 · The first → .*exec T1$/m);
+  assert.ok(res.stdout.split("\n").every((l) => [...l].length <= 80));
 });

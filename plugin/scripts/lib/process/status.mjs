@@ -22,7 +22,7 @@ import { keptTrees, nudges } from "./drift.mjs";
 import * as git from "./git.mjs";
 import { isShaAnyCase } from "./markdown.mjs";
 import { readInside } from "./read.mjs";
-import { refKinds, resolve } from "./rules/structure.mjs";
+import { refKinds, resolve, withId } from "./rules/structure.mjs";
 import { own } from "./spec/shape.mjs";
 import { readNoteSeen, staleNote } from "./stale-status.mjs";
 
@@ -63,6 +63,20 @@ export function titleOf(spec, item) {
   );
   const found = fields.map(([n]) => item.fields[n]).find((v) => typeof v === "string" && v);
   return found ?? undefined;
+}
+
+// `{ title }` for an item that has one: the in-flight, on-you and drift rows carry it beside the id.
+const titleKey = (spec, item) => {
+  const title = item && titleOf(spec, item);
+  return title ? { title } : {};
+};
+
+/** The title of the item `id` on the board, the work kind's first, or undefined: what the session start's
+ *  held lanes and drift rows read beside the id. */
+export function titleById(spec, model, id) {
+  const items = withId(model, id);
+  const item = items.find((i) => i.kind === workKind(spec)) ?? items[0];
+  return item && titleOf(spec, item);
 }
 
 // Every SHA-looking token in a commits or evidence field: what the evidence rules may ask git about.
@@ -252,11 +266,11 @@ export function statusView({ root, spec, model, runRoot = root }) {
     now: nowItems.filter((i) => i.phase === "active").map(progress),
     inFlight: items
       .filter((i) => i.phase === "active")
-      .map((i) => ({ id: i.id, status: i.status })),
+      .map((i) => ({ id: i.id, status: i.status, ...titleKey(spec, i) })),
     onYou: [
       ...items.filter((i) => stateOf(i, verify) === "verify"),
       ...loose.filter((i) => i.phase === "active"),
-    ].map((i) => ({ kind: i.kind, id: i.id, status: i.status })),
+    ].map((i) => ({ kind: i.kind, id: i.id, status: i.status, ...titleKey(spec, i) })),
     blocked,
     // A sprint holding only parked rows has nothing to count here: the parked total already has them.
     ahead: nowItems
@@ -265,7 +279,10 @@ export function statusView({ root, spec, model, runRoot = root }) {
       .filter((p) => p.total > 0 || !p.tally.parked),
     parked: items.filter((i) => i.phase === "parked").length,
     side,
-    nudges: nudges({ root, runRoot, spec, model }),
+    nudges: nudges({ root, runRoot, spec, model }).map((n) => {
+      const title = n.id && titleById(spec, model, n.id);
+      return title ? { ...n, title } : n;
+    }),
     kept: keptTrees({ root, runRoot, spec }).map((t) => ({ path: t.path, branch: t.branch })),
     drafts: drafts.pending(runRoot).length,
     recent: git.log(root, { ref: branch, n: 10, firstParent: true }),

@@ -5,7 +5,9 @@
 //           work in flight, the owner's open questions, the lane ledgers, how many merged today, and the
 //           vendored CLI's staleness as the main checkout's stamp says (`process/lanes.mjs`' vendored(), the
 //           row `board explain` shows). Printed
-//           as at most 40 lines, or `--json`. It records two things in the main checkout's `.agentry/run/`,
+//           as at most 40 lines, or `--json`. Every held and parked lane is listed, its why wrapped rather
+//           than cut; the 40 lines count them but never hide one. The in-flight, held, parked and drift
+//           lines carry the item's title beside its id (`T1 · The first`), cut to fit. It records two things in the main checkout's `.agentry/run/`,
 //           the same with `--json` or without: the Now a note was first read under (`note-seen.json`,
 //           `stale-status.mjs`) and, per idle lane, the `lastChange` it asked the owner about
 //           (`idle-asked.json`, `../session-checks.mjs`), so the owner is asked once. A newly idle lane is
@@ -33,11 +35,11 @@ import * as drafts from "../../process/drafts.mjs";
 import { mainRoot } from "../../process/git.mjs";
 import { vendored } from "../../process/lanes.mjs";
 import * as ledgers from "../../process/ledger.mjs";
-import { fit } from "../../process/render.mjs";
+import { fit, tagged, wrapText } from "../../process/render.mjs";
 import { SKILL_DIR, sessionChecks, skillExists } from "../../process/spec/extensions.mjs";
 import { idleMinutes } from "../../process/spec/presets.mjs";
 import { markNoteSeen } from "../../process/stale-status.mjs";
-import { noteView, statusView, titleOf, workKind } from "../../process/status.mjs";
+import { noteView, statusView, titleById, titleOf, workKind } from "../../process/status.mjs";
 import { runText } from "../../process/steps.mjs";
 import { shellQuote } from "../../text/shell.mjs";
 import { clock, heldText, idleHead } from "../exec-view.mjs";
@@ -74,7 +76,6 @@ const WIDTH = 80;
 const MAX_LINES = 40;
 const MAX_LIST = 4; // lines one list may take
 const NOTE_LINES = 3; // lines of the note that start prints
-const MAX_HELD = 3; // held and parked lanes start prints, the rest counted
 const MAX_IDLE = 3; // newly idle lanes start prints a block for, the rest counted
 const NOTE_COLUMNS = 100; // a failed close check's line, note included, as start prints it
 const MAX_FAILED = 3; // failed close checks start names, the rest counted
@@ -120,12 +121,13 @@ const pendingEpisodes = (all) =>
 // the root) and the step that answers it: the resume, or for a guard hold its reason and the
 // report to run again once main is fixed. A context hold carries its reason, and its resume asks for the
 // fact. The owner's holds come before the parked lanes.
-const heldOf = (runRoot, all) =>
+const heldOf = (runRoot, all, titleFor) =>
   all
     .filter((l) => l.state === "held" && l.hold)
     .toSorted((a, b) => (a.hold.for === "later") - (b.hold.for === "later"))
     .map((l) => ({
       id: l.id,
+      ...(titleFor(l.id) && { title: titleFor(l.id) }),
       for: l.hold.for,
       when: l.hold.when,
       steps: l.hold.stepRun && l.steps?.length ? runText(l.hold.stepRun, l.steps.length) : null,
@@ -182,7 +184,7 @@ function start({ root, spec, model }, asked) {
   return {
     prompt: spec.conductor?.prompt ? join(root, spec.conductor.prompt) : null,
     ...modeOf(root),
-    held: heldOf(runRoot, all),
+    held: heldOf(runRoot, all, (id) => titleById(spec, model, id)),
     idle: sessionChecksFile.withAsked(asked, idleOfAll(all, spec)),
     status,
     recall: recallFor(root, task),
@@ -296,10 +298,21 @@ function startChecks({ start: now, close: last }, { add, addList }) {
   if (failed.length > MAX_FAILED) add(`last close: +${failed.length - MAX_FAILED} more failed`);
 }
 
+// `line(id)` with the id's title beside it (`id · title`), the title cut so the line fits WIDTH.
+const withTitle = (id, title, line) => line(tagged(id, title, WIDTH - [...line(id)].length - 3));
+// An item as a list entry: `T1 · The first (doing)`.
+const entry = (i) => `${tagged(i.id, i.title)} (${i.status})`;
+
 function renderStart(s, { name, root }) {
   const mode = s.configError ? "unreadable" : (s.mode ?? "none set");
   const lines = [fit(`${name} · session start · mode ${mode}`, WIDTH)];
   const add = (text, width = WIDTH) => lines.push(fit(text, width));
+  // The header and every held or parked lane's lines stay when the 40-line cap drops the rest.
+  const pinned = new Set([0]);
+  const hold = (text, width) => {
+    add(text, width);
+    pinned.add(lines.length - 1);
+  };
   if (s.configError) add(`config: ${s.configError.replace(`${root}/`, "")}`);
   // A list wraps onto up to MAX_LIST lines; what does not fit is counted, never silently cut. `tail` ends
   // its last line, after the count too.
@@ -338,27 +351,35 @@ function renderStart(s, { name, root }) {
     );
   if (s.checks) startChecks(s.checks, { add, addList });
   // The lanes that wait on the owner, before anything else the session holds.
-  // A parked lane reads like a held one: its why, its evidence when it has one, and the resume.
-  for (const h of s.held.slice(0, MAX_HELD)) {
+  // A parked lane reads like a held one: its why (wrapped, never cut), its evidence when it has one, and the
+  // resume. Every one is listed.
+  for (const h of s.held) {
     if (h.for === "guard") {
-      add(`held: ${h.id} guard tripped, since ${clock(h.since)}`);
-      add(`  reason: ${h.reason}`);
-      add(`  → ${h.report} (after fixing it)`, Number.POSITIVE_INFINITY); // a step to run: never cut
+      hold(withTitle(h.id, h.title, (id) => `held: ${id} guard tripped, since ${clock(h.since)}`));
+      hold(`  reason: ${h.reason}`);
+      hold(`  → ${h.report} (after fixing it)`, Number.POSITIVE_INFINITY); // a step to run: never cut
       continue;
     }
     // A context hold reads as `exec show` prints it (exec-view's heldText), its reason never cut.
-    if (h.for === "context") add(`held: ${h.id} ${heldText(h, 0)}`, Number.POSITIVE_INFINITY);
-    else if (h.for === "later")
-      add(`parked: ${h.id} since ${clock(h.since)}${h.why ? `: "${oneLine(h.why)}"` : ""}`);
-    else
-      add(
-        `held: ${h.id} for the owner, ${h.steps ? `${h.when} ${h.steps}` : "mid-build"}, since ${clock(h.since)}`,
+    if (h.for === "context")
+      hold(`held: ${tagged(h.id, h.title, 32)} ${heldText(h, 0)}`, Number.POSITIVE_INFINITY);
+    else if (h.for === "later") {
+      const text = `parked: ${tagged(h.id, h.title, 32)} since ${clock(h.since)}${h.why ? `: "${oneLine(h.why)}"` : ""}`;
+      wrapText(text, WIDTH, WIDTH - 2).forEach((l, i) =>
+        hold(i ? `  ${l}` : l, Number.POSITIVE_INFINITY),
       );
-    if (h.evidence) add(`  evidence: ${h.evidence}`);
-    add(`  → ${h.resume}`);
+    } else
+      hold(
+        withTitle(
+          h.id,
+          h.title,
+          (id) =>
+            `held: ${id} for the owner, ${h.steps ? `${h.when} ${h.steps}` : "mid-build"}, since ${clock(h.since)}`,
+        ),
+      );
+    if (h.evidence) hold(`  evidence: ${h.evidence}`);
+    hold(`  → ${h.resume}`);
   }
-  if (s.held.length > MAX_HELD)
-    add(`held: +${s.held.length - MAX_HELD} more → ${nextStep("lane session start --json")}`);
   // Lanes newly idle at their lastChange: one question for all of them first (they are recorded as asked
   // only when it is within the 40 lines), then a block each, capped as held is, the park step on its own
   // line so 80 columns never cut it. The lanes already asked: one quiet line.
@@ -399,18 +420,16 @@ function renderStart(s, { name, root }) {
     .forEach((l, i) => add(i ? `      ${l.trim()}` : `${label}${l.trim()}`));
   // The step ends the line: the path is never cut.
   if (note?.stale) add(staleText(note), Number.POSITIVE_INFINITY);
-  if (s.status.inFlight.length)
-    addList(
-      "in flight: ",
-      s.status.inFlight.map((i) => `${i.id} (${i.status})`),
-    );
-  if (s.status.onYou.length)
-    addList(
-      "on you: ",
-      s.status.onYou.map((i) => `${i.id} (${i.status})`),
-    );
+  if (s.status.inFlight.length) addList("in flight: ", s.status.inFlight.map(entry));
+  if (s.status.onYou.length) addList("on you: ", s.status.onYou.map(entry));
   for (const n of s.status.nudges.slice(0, 5))
-    add(`drift: ${n.kind} ${n.id ?? n.branch ?? basename(n.path ?? "")} → ${n.command}`);
+    add(
+      withTitle(
+        n.id ?? n.branch ?? basename(n.path ?? ""),
+        n.id && n.title,
+        (subject) => `drift: ${n.kind} ${subject} → ${n.command}`,
+      ),
+    );
   if (s.status.nudges.length > 5)
     add(`drift: +${s.status.nudges.length - 5} more (/agentry:board)`);
   if (s.status.drafts) add(`drafts: ${s.status.drafts} pending → /agentry:close`);
@@ -446,7 +465,11 @@ function renderStart(s, { name, root }) {
       `! stale: ${s.stale.slots} lock slot(s), ${s.stale.temps} temp file(s) → ${nextStep("lane sweep --apply")}`,
     );
   for (const f of s.recall.slice(0, 3)) add(`recall: ${f.text}`);
-  return lines.slice(0, MAX_LINES).join("\n");
+  // The cap drops from the end, and only lines that are not held or parked lanes'.
+  const over = new Set();
+  for (let i = lines.length - 1; i >= 0 && over.size < lines.length - MAX_LINES; i--)
+    if (!pinned.has(i)) over.add(i);
+  return lines.filter((_, i) => !over.has(i)).join("\n");
 }
 
 // argv → { words, json, check, note } or { error }; the router has already refused any other option.
