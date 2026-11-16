@@ -23,6 +23,7 @@ import {
   isBuilderBrief,
   isVerifierBrief,
   notesSection,
+  ownerCalls,
   policySlots,
   recheckSlots,
   relatedNotes,
@@ -703,6 +704,7 @@ const VALUES = {
   locked: false,
   lockTake: "",
   lockNames: "",
+  ownerCalls: "Pending owner calls: none.",
   // the notes a recheck judges, main's branch, the range-diff a resolve check reads (recheckSlots)
   sentBack: "N1, N2",
   mainBranch: "main",
@@ -1442,5 +1444,28 @@ test("verify, recheck and final briefs take the publish-nothing rule before ## R
   }
   for (const step of ["rebase", "resolve"]) {
     assert.ok(!isBuilderBrief(step) && !isVerifierBrief(step), step);
+  }
+});
+
+test("ownerCalls lists pending drafts newest first, capped at 10, and says none when there are none", () => {
+  assert.equal(ownerCalls([]), "Pending owner calls: none.");
+  const mk = (n, answer = `answer ${n}`) => ({ n, kind: "decision", answer, state: "pending" });
+  const few = ownerCalls([mk(1), mk(3, `${"x".repeat(150)}`), mk(2)]).split("\n");
+  assert.deepEqual(
+    few.slice(0, 3).map((l) => l.slice(0, 16)),
+    ["- #3 decision: x", "- #2 decision: a", "- #1 decision: a"],
+  );
+  assert.equal(few[0].length, "- #3 decision: ".length + 101, "answer cut at 100 plus an ellipsis");
+  assert.match(few.at(-1), /Read them all with `agentry board draft list` before you FAIL an item/);
+  const many = ownerCalls(Array.from({ length: 13 }, (_, i) => mk(i + 1))).split("\n");
+  assert.equal(many.filter((l) => l.startsWith("- #")).length, 10);
+  assert.ok(many.includes("- … and 3 more"));
+  assert.ok(many[0].startsWith("- #13 "), "newest first");
+});
+
+test("the verify and final briefs carry the owner-calls section", () => {
+  for (const step of ["verify", "recheck", "final"]) {
+    const text = renderBrief(step, { ...VALUES, ownerCalls: "Pending owner calls: none." });
+    assert.match(text, /## Pending owner calls\n\nPending owner calls: none\./, step);
   }
 });

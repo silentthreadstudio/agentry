@@ -12,6 +12,7 @@
 //   policySlots     the repo's policy lines (workflow file `briefs`) for a dispatch, as the brief's section
 //   rewordSlots     the rebase brief's Reword list: each commit the land would pick that breaks the
 //                   workflow file's `commits` rules (`policySlots` carries the rules to it)
+//   ownerCalls      the pending drafts of the `board draft` store as the verify brief's "Pending owner calls"
 //   recheckSlots    what a recheck, rebase and resolve brief name: the notes sent back, main's branch and
 //                   the range-diff the resolve check reads
 //   stepSlots       the slots a contract with steps fills: the round's run, the owner's answer a
@@ -212,6 +213,31 @@ export const recheckSlots = ({ sentBack = [], mainBranch = "main", rangeDiff = "
 });
 
 const NOT_THIS_ROUND_WIDTH = 100;
+const OWNER_CALLS_CAP = 10;
+
+/** The pending drafts (`board draft`'s, any order) as the verify and final briefs' owner-call lines: newest
+ *  first, at most `OWNER_CALLS_CAP`, `#<n> <kind>: <answer cut at ~100 characters>` each, a line for the rest
+ *  and the rule to read them all before failing an item about an owner's pick. "Pending owner calls: none."
+ *  for none. Drafts carry no task key, so every pending one in the store is listed. */
+export function ownerCalls(pending) {
+  if (!pending.length) return "Pending owner calls: none.";
+  const sorted = [...pending].sort((a, b) => b.n - a.n);
+  const lines = sorted.slice(0, OWNER_CALLS_CAP).map((d) => {
+    const answer = String(d.answer ?? "")
+      .replace(/\s+/g, " ")
+      .trim();
+    const cut =
+      answer.length > NOT_THIS_ROUND_WIDTH ? `${answer.slice(0, NOT_THIS_ROUND_WIDTH)}…` : answer;
+    return `- #${d.n} ${d.kind}: ${cut}`;
+  });
+  const more = sorted.length - OWNER_CALLS_CAP;
+  if (more > 0) lines.push(`- … and ${more} more`);
+  lines.push(
+    "",
+    "Read them all with `agentry board draft list` before you FAIL an item about an owner's pick: a pending draft is the owner's call not yet applied.",
+  );
+  return lines.join("\n");
+}
 
 // A step's fresh builder (not a resumed one) is pointed to the report the step before it ended with.
 const newBuilder = ({ evidence }, mode) =>

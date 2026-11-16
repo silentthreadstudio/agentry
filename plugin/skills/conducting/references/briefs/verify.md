@@ -78,6 +78,10 @@ Decisions it cites, quoted from the board:
 
 The builder's report: {{builderReport}}
 
+## Pending owner calls
+
+{{ownerCalls}}
+
 ## How to check
 
 - Each acceptance item: PASS, FAIL or UNVERIFIED, with its evidence (the command and its exit code,

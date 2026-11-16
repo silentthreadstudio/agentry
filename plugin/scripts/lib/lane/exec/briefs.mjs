@@ -3,6 +3,7 @@
 // round added to the ledger; and a waiting brief written again when what it says has changed.
 import { appendFileSync, mkdirSync, readFileSync, writeFileSync } from "node:fs";
 import { join } from "node:path";
+import * as drafts from "../../process/drafts.mjs";
 import * as ledgers from "../../process/ledger.mjs";
 import { gateOf } from "../../process/spec/workflow.mjs";
 import { shellQuote as q } from "../../text/shell.mjs";
@@ -15,6 +16,7 @@ import {
   isBuilderBrief,
   isVerifierBrief,
   notesSection,
+  ownerCalls,
   ownerChange,
   policySlots,
   recheckSlots,
@@ -93,6 +95,15 @@ function recordedGate(ctx, ledger, tip) {
   };
 }
 
+// A missing or unreadable draft store reads as none pending.
+function pendingDrafts(root) {
+  try {
+    return drafts.pending(root);
+  } catch {
+    return [];
+  }
+}
+
 function factsLine(root, owned, block) {
   const { prime, facts } = recalledFacts(root, { owned, block });
   if (prime !== "all") return `none (memory.prime is "${prime}": briefs carry no recalled facts)`;
@@ -166,6 +177,7 @@ export function brief({ root, spec, model }, ledger, dispatch) {
     earlier: verdicts(ledger)
       .map((r) => r.reportPath)
       .join(", "),
+    ownerCalls: ownerCalls(pendingDrafts(root)),
     ...policySlots(spec, dispatch.step),
     ...recheckSlots({ sentBack: sentBack(ledger), ...lastMove(ledger) }),
     ...stepSlots({
