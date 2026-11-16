@@ -6,6 +6,23 @@ scheme is pragmatic: patch releases carry fixes, docs, and small additions.
 
 ## [Unreleased]
 
+## [0.5.0] — 2026-11-16
+
+Field fixes from the game's P3b–P3f sprints. `lane exec` steps stop costing rounds (facts, report intake and
+clearer next steps), the board, draft and session commands close the gaps the sprints found, and a land now
+owns main while it runs.
+
+### Upgrade notes
+
+- While a land or a cut holds main, the writers refuse with exit 2: the `lane exec` steps, `board add|set|fix
+  --apply`, `board draft apply --apply`, `exec rebase`, `exec hold` and `owns --apply`. The message names the
+  land or cut and its step; `agentry lane merge --status` says whether it is alive. A plain `git commit` on
+  main during a land is still not stopped: do not make one.
+- `board draft apply` refuses a decision with no why until `--why` gives one, and refuses a rule that closely
+  resembles a line already in its section unless `--force` is given.
+- Status and session JSON rows carry a `title` key beside each id. A consumer that reads rows by position or
+  rejects unknown keys needs to allow it.
+
 ### Added
 
 - `lane exec fact <id> --text "<fact>"` writes the answer a needs-context builder asked for into its brief under
@@ -916,7 +933,8 @@ without the fix.
   - **Self-eval harness** — measures the system's own routing and decision
     quality instead of asserting it works.
 
-[Unreleased]: https://github.com/silentthreadstudio/agentry/compare/v0.4.2...HEAD
+[Unreleased]: https://github.com/silentthreadstudio/agentry/compare/v0.5.0...HEAD
+[0.5.0]: https://github.com/silentthreadstudio/agentry/compare/v0.4.2...v0.5.0
 [0.4.2]: https://github.com/silentthreadstudio/agentry/compare/v0.4.1...v0.4.2
 [0.4.1]: https://github.com/silentthreadstudio/agentry/compare/v0.4.0...v0.4.1
 [0.4.0]: https://github.com/silentthreadstudio/agentry/compare/v0.3.0...v0.4.0
