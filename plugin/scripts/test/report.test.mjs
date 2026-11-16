@@ -85,6 +85,12 @@ test("builderStatus: past the first 5 lines, two status lines or a status with p
   assert.equal(builderStatus(`${PREAMBLE}DONE: and the tests pass`), null);
 });
 
+test("builderStatus: past the first 5 lines, a bulleted, quoted or heading status line is not a status", () => {
+  for (const line of ["- BLOCKED", "> DONE", "# DONE", "* DONE", "- **DONE**"]) {
+    assert.equal(builderStatus(`${PREAMBLE}${line}\nmore`), null, line);
+  }
+});
+
 test("builderStatus: a status in the first 5 lines wins over a later one", () => {
   assert.equal(builderStatus("DONE\nsummary\n\nBLOCKED\n"), "DONE");
 });

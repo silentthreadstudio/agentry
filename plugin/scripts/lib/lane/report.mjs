@@ -18,6 +18,9 @@ const WRAPPER = /<\/?(?:subagent|task|task_result|text)(?:\s[^>]*)?>/g;
 // Decoration around a line that is not part of its meaning: markdown emphasis, code ticks, quote marks.
 const strip = (line) => line.replace(/^[\s>#*`_-]+/, "").replace(/[\s*`_]+$/, "");
 
+// Only emphasis and code ticks: a bullet, quote or heading mark makes a line prose, not a status line.
+const emphasisOff = (line) => line.replace(/^\s*(?:[*`_]+(?=\S))?/, "").replace(/[\s*`_]+$/, "");
+
 const nonEmpty = (text) =>
   unwrap(text)
     .split("\n")
@@ -61,7 +64,7 @@ export function builderStatus(text) {
     if (m) return m[1];
   }
   const lone = lines.flatMap((line) => {
-    const m = LONE_STATUS.exec(strip(line));
+    const m = LONE_STATUS.exec(emphasisOff(line));
     return m ? [m[1]] : [];
   });
   return lone.length === 1 ? lone[0] : null;
