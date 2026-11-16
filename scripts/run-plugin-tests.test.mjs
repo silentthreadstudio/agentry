@@ -1,12 +1,26 @@
 import assert from "node:assert/strict";
-import { chmodSync, mkdirSync, mkdtempSync, realpathSync, rmSync, symlinkSync, writeFileSync } from "node:fs";
+import {
+  chmodSync,
+  mkdirSync,
+  mkdtempSync,
+  realpathSync,
+  rmSync,
+  symlinkSync,
+  writeFileSync,
+} from "node:fs";
 import { tmpdir } from "node:os";
 import { delimiter, dirname, join, resolve } from "node:path";
 import { after, test } from "node:test";
 import { fileURLToPath } from "node:url";
 import { filterPath } from "./run-plugin-tests.mjs";
 
-const PLUGIN_BIN = resolve(dirname(fileURLToPath(import.meta.url)), "..", "plugin", "bin", "agentry");
+const PLUGIN_BIN = resolve(
+  dirname(fileURLToPath(import.meta.url)),
+  "..",
+  "plugin",
+  "bin",
+  "agentry",
+);
 const tmp = realpathSync(mkdtempSync(join(tmpdir(), "run-plugin-tests-")));
 after(() => rmSync(tmp, { recursive: true, force: true }));
 

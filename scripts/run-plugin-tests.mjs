@@ -8,7 +8,13 @@ import { constants, accessSync, realpathSync } from "node:fs";
 import { delimiter, dirname, join, resolve } from "node:path";
 import { fileURLToPath } from "node:url";
 
-const PLUGIN_BIN = resolve(dirname(fileURLToPath(import.meta.url)), "..", "plugin", "bin", "agentry");
+const PLUGIN_BIN = resolve(
+  dirname(fileURLToPath(import.meta.url)),
+  "..",
+  "plugin",
+  "bin",
+  "agentry",
+);
 
 const holdsPluginAgentry = (dir) => {
   try {
