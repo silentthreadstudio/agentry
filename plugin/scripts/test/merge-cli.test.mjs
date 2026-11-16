@@ -3164,3 +3164,62 @@ test("a gate refused on a dirty main says to land again, and names --drop-carry 
   assert.match(res.stdout, /pass --drop-carry to land without the set-aside one/);
 });
 
+// ---- merge --status: is a land running -----------------------------------------------------------
+
+function landLedger(id, merge) {
+  writeLedger(root, {
+    v: 1,
+    id,
+    kind: "task",
+    origin: "exec",
+    mainBranch: "main",
+    worktree: "/gone",
+    branch: `agentry/${id}`,
+    rounds: [],
+    gates: [],
+    checks: {},
+    usedMemories: [],
+    state: "merging",
+    next: "",
+    merge,
+  });
+}
+
+test("--status says no land running, in text and in JSON, and takes no task id", () => {
+  const text = merge("--status");
+  assert.equal(text.status, 0, out(text));
+  assert.equal(text.stdout.trim(), "no land running");
+  assert.deepEqual(JSON.parse(merge("--status", "--json").stdout), { landing: null });
+  const withId = merge(ID, "--status");
+  assert.equal(withId.status, 2, out(withId));
+  assert.match(withId.stderr, /--status takes no task id/);
+});
+
+test("--status names the land holding main: its id, step, since and whether its process runs", () => {
+  const at = new Date().toISOString();
+  landLedger("ZZ", { step: "gating", at, holder: { pid: process.pid, start: null, at } });
+  const alive = merge("--status");
+  assert.equal(alive.status, 0, out(alive));
+  assert.match(alive.stdout.trim(), /^landing ZZ · step gating · since \d\d:\d\d · alive$/);
+  const dead = spawnSync(process.execPath, ["-e", ""]).pid;
+  landLedger("ZZ", { step: "gating", at, holder: { pid: dead, start: null, at } });
+  assert.match(merge("--status").stdout.trim(), / · dead$/);
+  const json = JSON.parse(merge("--status", "--json").stdout).landing;
+  assert.deepEqual([json.id, json.step, json.alive], ["ZZ", "gating", false]);
+  landLedger("ZZ", { step: "gating", at });
+  assert.match(merge("--status").stdout.trim(), / · unknown$/, "a record that names no process");
+  landLedger("ZZ", { step: "rolled-back", at });
+  assert.equal(merge("--status").stdout.trim(), "no land running");
+});
+
+test("a land records its process in the ledger from the set-aside on, and --status reads it while it runs", () => {
+  const { path } = build({ "src/a.txt": "a\n" });
+  mustLand("--branch", BRANCH);
+  const holder = readLedger(root, ID).merge.holder;
+  assert.equal(Number.isInteger(holder.pid), true);
+  assert.equal(typeof holder.at, "string");
+  assert.equal(readLedger(root, ID).state, "merged");
+  assert.equal(merge("--status").stdout.trim(), "no land running", "a merged land holds nothing");
+  assert.ok(existsSync(path));
+});
+

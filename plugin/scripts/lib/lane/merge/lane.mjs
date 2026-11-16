@@ -5,6 +5,7 @@
 import { nextStep } from "../../cli/invoke.mjs";
 import { readConfig } from "../../config.mjs";
 import { write as writeLedger } from "../../process/ledger.mjs";
+import { identity } from "../../process/pid.mjs";
 import { now } from "../fmt.mjs";
 import { commitOf } from "../land.mjs";
 
@@ -51,9 +52,33 @@ export function save(lane, changes = {}) {
   lane.ledger = writeLedger(lane.root, { ...lane.ledger, ...changes });
   return lane.ledger;
 }
-/** The same for the ledger's `merge` record; a key set to undefined is dropped. */
+/** The process running this land as the ledger names it, `{ pid, start, at }` (`at`: when this process took
+ *  the land, kept while it is the one writing), so `landInProgress` can tell a land that runs from one a
+ *  kill left. */
+export function holderOf(lane) {
+  const held = lane.ledger.merge?.holder;
+  const me = identity();
+  return held?.pid === me.pid && held.start === me.start ? held : { ...me, at: now() };
+}
+/** A land resumed takes the record over: its process is the holder from here on, whatever wrote it before.
+ *  Nothing is written when this process already holds it, or no land is under way. */
+export function claim(lane) {
+  const { state, merge } = lane.ledger;
+  if (state !== "merging" || !merge) return;
+  const mine = holderOf(lane);
+  if (merge.holder !== mine) save(lane, { merge: { ...merge, holder: mine } });
+}
+/** The same for the ledger's `merge` record; a key set to undefined is dropped. Every write of a land not
+ *  yet merged names the process doing it, from the set-aside on. */
 export const setMerge = (lane, changes) =>
-  save(lane, { merge: { ...lane.ledger.merge, ...changes, at: now() } });
+  save(lane, {
+    merge: {
+      ...lane.ledger.merge,
+      ...(lane.ledger.state !== "merged" && { holder: holderOf(lane) }),
+      ...changes,
+      at: now(),
+    },
+  });
 
 /** The branch's current tip. */
 export const tipOf = (lane) => commitOf(lane.root, `refs/heads/${lane.ledger.branch}`);

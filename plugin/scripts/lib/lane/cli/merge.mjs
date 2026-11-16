@@ -7,6 +7,7 @@
 //                                                        land → gate or skip → record → board commit
 //   merge <id> --push [--approved]                       push per config merge.push (ask|auto|never)
 //   merge <id> --cleanup [--discard-ignored]             the worktree and branch, found by branch
+//   merge --status                                       is a land running: its id, step, since and holder
 //   merge <id> --resolve landed|rolled-back [--checked]  close a stuck land on the owner's call, or (landed)
 //                                                        a verified lane whose work reached main another way
 //
@@ -39,7 +40,17 @@ import { attributionIn, mergeBaseOf } from "../land.mjs";
 import { hasOldRecord, heldRow } from "../merge/aside.mjs";
 import { carryBackStep, dropNext, giveBack, takeCarryStep } from "../merge/carry.mjs";
 import { gateStep } from "../merge/gating.mjs";
-import { FRESH, afterLand, checkNext, done, landNext, ok, red, short } from "../merge/lane.mjs";
+import {
+  FRESH,
+  afterLand,
+  checkNext,
+  claim,
+  done,
+  landNext,
+  ok,
+  red,
+  short,
+} from "../merge/lane.mjs";
 import { mainRow, mainStep } from "../merge/main-row.mjs";
 import { check, cleanupMode, pushMode } from "../merge/modes.mjs";
 import { landStep } from "../merge/picks.mjs";
@@ -57,6 +68,7 @@ import {
   subjectsRow,
 } from "../merge/rows.mjs";
 import { childRows, stackRows } from "../merge/stack.mjs";
+import { statusMode } from "../merge/status.mjs";
 import { RestackError, restackLane } from "../restack.mjs";
 import { childrenOf } from "../stack.mjs";
 
@@ -68,6 +80,7 @@ export const help = {
     "merge <id> --push [--approved]",
     "merge <id> --cleanup [--discard-ignored]",
     "merge <id> --resolve landed|rolled-back [--checked]",
+    "merge --status [--json]",
   ],
   purpose: "Land one task on main, one mode per call; each prints a step table and the next step.",
   args: { "<id>": "the task's id, any case" },
@@ -89,6 +102,8 @@ export const help = {
       "close a land stuck in merging (owner's call): its picks all on main, or none; landed also closes a verified lane whose commits main has by patch (git cherry); main and the board untouched",
     "--checked":
       "with --resolve rolled-back: you checked by hand the planned files main changed since the land began; with landed on a lane found on main: the commits main lacks by patch landed squashed or reworded",
+    "--status":
+      "is a land running: `landing <id> · step <s> · since <t> · alive|dead`, or `no land running` (takes no id)",
     "--json": "with any mode: print { id, branch, main, rows, next } as one JSON object",
   },
   exits: { 0: "done, next printed", 1: "a red step stopped it", 2: "usage or refusal" },
@@ -103,6 +118,7 @@ const MODES = {
   "--push": ["--approved"],
   "--cleanup": ["--discard-ignored"],
   "--resolve": ["--checked"],
+  "--status": [],
 };
 // argv → { id, mode, opts } or { error }.
 function parse(argv) {
@@ -123,7 +139,9 @@ function parse(argv) {
     if (value === undefined || value.startsWith("--")) return { error: `${arg} needs a value` };
     opts[arg] = value;
   }
-  if (words.length !== 1) return { error: "needs one task id" };
+  const status = Object.hasOwn(opts, "--status");
+  if (status && words.length > 0) return { error: "--status takes no task id" };
+  if (!status && words.length !== 1) return { error: "needs one task id" };
   const modes = Object.keys(MODES).filter((m) => Object.hasOwn(opts, m));
   if (modes.length !== 1) return { error: `give exactly one of ${Object.keys(MODES).join(", ")}` };
   const [mode] = modes;
@@ -131,7 +149,7 @@ function parse(argv) {
     (k) => k !== mode && k !== "--json" && !MODES[mode].includes(k),
   );
   if (stray) return { error: `${stray} does not go with ${mode}` };
-  return { id: words[0], mode, opts };
+  return { id: words[0] ?? null, mode, opts };
 }
 
 // --- the land and its preflight ------------------------------------------------------------------
@@ -302,6 +320,7 @@ function land(lane) {
     recordStep,
     commitStep,
   ];
+  claim(lane);
   for (const step of steps) {
     const stop = step(lane, rows);
     if (!stop) continue;
@@ -330,6 +349,8 @@ const RUN = {
 export function run(argv, { root, spec, model }) {
   const parsed = parse(argv);
   if (parsed.error) return usageError("lane merge", parsed.error);
+  if (parsed.mode === "--status")
+    return statusMode(mainRoot(root) ?? root, { json: Boolean(parsed.opts["--json"]) });
   const resolved = runId(spec, model, parsed.id);
   if (resolved.error) return refuse(`lane merge ${parsed.id}`, resolved.error);
   parsed.id = resolved.id;

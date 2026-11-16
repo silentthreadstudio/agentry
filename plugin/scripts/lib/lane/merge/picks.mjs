@@ -13,7 +13,7 @@ import {
   subjectOf,
 } from "../land.mjs";
 import { isMemoryCommit } from "../own-memory.mjs";
-import { FRESH, now, ok, red, save, setMerge, short } from "./lane.mjs";
+import { FRESH, holderOf, now, ok, red, save, setMerge, short } from "./lane.mjs";
 import { commitsRow, listedTip } from "./rows.mjs";
 
 // Agentry's own config at the root of `.agentry/` (process.json, workflow.json, config.json).
@@ -166,6 +166,7 @@ export function landStep(lane, rows) {
       droppedCarries,
       allow,
       writes,
+      holder: holderOf(lane),
       preHead: commitOf(root, "HEAD"),
       planned: plan.picks,
       landed: [],
