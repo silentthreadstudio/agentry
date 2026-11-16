@@ -1099,18 +1099,18 @@ test("an owner's hand edit of the board after a kill: the rerun refuses and the 
   assert.equal(ledgerOf(r.root, "T1").state, "merging");
 });
 
-test("the owner's board set while a cut is stuck: the rerun refuses and the write stays", () => {
+const CUT_LANDING =
+  /T1 is landing \(step picking\) but its process is gone: roll its cut back with agentry lane exec cut T1/;
+test("the owner's board set while a cut is stuck is refused, naming the cut's rollback", () => {
   const { r } = setup();
   assert.equal(cutT1(r, "after| cherry-pick |1").signal, "SIGKILL");
   const set = run(r, BOARD, ["set", "task", "T2", "status=done", "--apply"]);
-  assert.equal(set.exit, 0, set.out);
-  const again = cutT1(r);
-  assert.equal(again.exit, 2, again.out);
-  assert.match(again.out, STRANGE);
-  assert.equal(statusOf(r.root, "T2"), "done");
+  assert.equal(set.exit, 2, set.out);
+  assert.match(set.out, CUT_LANDING);
+  assert.notEqual(statusOf(r.root, "T2"), "done");
 });
 
-test("another lane's exec write while a cut is stuck (T3 reports built): the rerun refuses, it stays", () => {
+test("another lane's exec write while a cut is stuck (T3 reports built) is refused, nothing written", () => {
   const { r } = setup();
   const t3 = ledgerOf(r.root, "T3");
   commitFile(t3.worktree, "docs/three.md", "three\n", "docs: three");
@@ -1119,14 +1119,11 @@ test("another lane's exec write while a cut is stuck (T3 reports built): the rer
     join(runsDir(r.root), "T3", "r1-build.report.md"),
     "DONE\nbuilt it\nused_memories: none\n",
   );
+  const before = statusOf(r.root, "T3");
   const rep = lane(r, "report", "T3");
-  assert.equal(rep.exit, 0, rep.out);
-  const written = statusOf(r.root, "T3");
-  assert.equal(written, "verify");
-  const again = cutT1(r);
-  assert.equal(again.exit, 2, again.out);
-  assert.match(again.out, STRANGE);
-  assert.equal(statusOf(r.root, "T3"), written);
+  assert.equal(rep.exit, 2, rep.out);
+  assert.match(rep.out, CUT_LANDING);
+  assert.equal(statusOf(r.root, "T3"), before);
 });
 
 test("a rollback killed after its reset is finished by the next rerun", () => {

@@ -3222,19 +3222,41 @@ test("a land whose process is gone says so and names the resume and resolve line
   assert.match(res.stderr, /merge ZZ --resolve landed\|rolled-back/);
 });
 
-test("a land with nothing of it on main (conflict, rolled back), a stuck cut and an untouched adoption refuse no writer", () => {
+test("a land with nothing of it on main (conflict, rolled back) and an untouched adoption refuse no writer", () => {
   const r = repo();
   verified(r, "T1", "out.txt");
   const at = new Date().toISOString();
-  for (const merge of [
-    { step: "conflict", at },
-    { step: "rolled-back", at },
-    { step: "gating", cut: {}, at },
-    undefined,
-  ]) {
+  for (const merge of [{ step: "conflict", at }, { step: "rolled-back", at }, undefined]) {
     landOf(r, merge);
     assert.doesNotMatch(lane(r, "close", "T1").stderr, /is landing/, JSON.stringify(merge));
   }
+});
+
+test("a cut's land, live or stuck, refuses every writer and names the cut's own recovery", () => {
+  const r = repo();
+  verified(r, "T1", "out.txt");
+  const at = new Date().toISOString();
+  landOf(r, { step: "gating", cut: true, at, holder: { pid: process.pid, start: null, at } });
+  const live = lane(r, "close", "T1");
+  assert.equal(live.exit, 2);
+  assert.match(live.stderr, /ZZ is landing \(step gating\): wait for it/);
+  const dead = spawnSync(process.execPath, ["-e", ""]).pid;
+  landOf(r, { step: "landed", cut: true, at, holder: { pid: dead, start: null, at } });
+  const stuck = lane(r, "close", "T1");
+  assert.equal(stuck.exit, 2);
+  assert.match(stuck.stderr, /ZZ is landing \(step landed\) but its process is gone/);
+  assert.match(stuck.stderr, /exec cut ZZ --decision <D> --apply/);
+  assert.doesNotMatch(stuck.stderr, /--resolve/);
+});
+
+test("exec rebase refuses while a land runs", () => {
+  const r = repo();
+  verified(r, "T1", "out.txt");
+  const at = new Date().toISOString();
+  landOf(r, { step: "gating", at, holder: { pid: process.pid, start: null, at } });
+  const res = lane(r, "rebase", "T1");
+  assert.equal(res.exit, 2);
+  assert.match(res.stderr, /ZZ is landing \(step gating\)/);
 });
 
 // ---- a rebased lane's guard starts at the commit it was rebased onto ---------------------
