@@ -514,7 +514,9 @@ In `workflow.json`:
   listed for the owner.
 - `cleanup.keep` is a non-empty list of globs (same matching) for ignored files worth saving. Before any removal
   they are copied to `.agentry/run/process/runs/<id>/kept/<path>` and the directory is printed, so a file it names
-  never stops the cleanup and is never lost; `keep` wins over `disposable`. `agentry lane merge <id> --cleanup
+  never stops the cleanup and is never lost; `keep` wins over `disposable`. A symlink holds no data and is never
+  copied: it is reported (`skipped link: <path>`) and the cleanup goes on. A copy whose folder under `kept/` leads
+  outside it stops the cleanup with an error. `agentry lane merge <id> --cleanup
   --keep-ignored` does the same for every ignored file that is not disposable (instead of refusing or
   `--discard-ignored`). `lane sweep`, `lane exec cut` and `lane exec restart` honour `cleanup.keep` the same way
   (a restart's copy moves to the archived run directory with the lane's other files).
