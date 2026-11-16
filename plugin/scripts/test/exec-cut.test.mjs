@@ -1237,3 +1237,73 @@ test("lane merge --push and --cleanup on a completed cut refuse and write nothin
   }
   assert.equal(ledgerOf(r.root, "T1").next, null);
 });
+
+// A cut with nothing to carry (the conductor committed the lifecycle cells) killed before its board commit.
+function uncarried() {
+  const r = repo();
+  parked(r);
+  git(r.root, "add", "plan/BOARD.md");
+  git(r.root, "commit", "-q", "-m", "chore(board): conductor commit");
+  return r;
+}
+const T2_DONE = ["set", "task", "T2", "status=done", "--apply"];
+
+test("a cut with nothing carried, killed before its board commit: the refusals name its rollback, which clears the land", () => {
+  const r = uncarried();
+  const kill = "before|cat-file blob HEAD:plan/BOARD.md|1";
+  assert.equal(runKilled(r, NO_KEEP, kill).signal, "SIGKILL");
+  const l = ledgerOf(r.root, "T1");
+  assert.deepEqual([l.state, l.merge.cut, l.merge.step], ["merging", true, "gated"]);
+  assert.ok(
+    Number.isInteger(l.merge.holder?.pid),
+    "the cut stamped its process at its first record",
+  );
+  const set = run(r, BOARD, T2_DONE);
+  assert.equal(set.exit, 2, set.out);
+  assert.match(
+    set.out,
+    /T1 is landing \(step gated\) but its process is gone: roll its cut back with agentry lane exec cut T1/,
+  );
+  assert.match(
+    run(r, LANE, ["merge", "--status"]).out,
+    /· dead\nnext: roll its cut back with agentry lane exec cut T1/,
+  );
+  const again = runKilled(r, NO_KEEP, null);
+  assert.match(again.out, /rolled back the stuck cut/, again.out);
+  assert.equal(run(r, BOARD, T2_DONE).exit, 0);
+});
+
+test("a cut whose record names no process still names its rollback to a writer and in --status", () => {
+  const r = uncarried();
+  assert.equal(
+    runKilled(r, NO_KEEP, "before|cat-file blob HEAD:plan/BOARD.md|1").signal,
+    "SIGKILL",
+  );
+  const l = ledgerOf(r.root, "T1");
+  const { holder: _h, ...merge } = l.merge;
+  writeFileSync(ledgerFile(r.root, "T1"), `${JSON.stringify({ ...l, merge }, null, 2)}\n`);
+  const set = run(r, BOARD, T2_DONE);
+  assert.equal(set.exit, 2, set.out);
+  assert.match(
+    set.out,
+    /as a cut that names no process: roll its cut back with agentry lane exec cut T1/,
+  );
+  assert.match(run(r, LANE, ["merge", "--status"]).out, /· unknown\nnext: roll its cut back/);
+});
+
+test("a cut killed after its board commit is marked no longer holds main: writers go through, its ledger closes", () => {
+  const r = repo();
+  parked(r);
+  assert.equal(cutT1(r, "after|commit --quiet -m chore\\(board\\)|1").signal, "SIGKILL");
+  const l = ledgerOf(r.root, "T1");
+  const { carry: _c, writes: _w, ...merge } = l.merge;
+  const cutBoard = git(r.root, "rev-parse", "HEAD");
+  writeFileSync(
+    ledgerFile(r.root, "T1"),
+    `${JSON.stringify({ ...l, merge: { ...merge, cutBoard } }, null, 2)}\n`,
+  );
+  assert.equal(run(r, BOARD, T2_DONE).exit, 0);
+  assert.match(run(r, LANE, ["merge", "--status"]).out, /no land running/);
+  const close = lane(r, "close", "T1");
+  assert.doesNotMatch(close.out, /is landing/, close.out);
+});
