@@ -331,7 +331,7 @@ export function push(root, { branch }) {
  */
 export function cleanup(
   root,
-  { branch, main, fallbackPath, discardIgnored = false, disposable = [] },
+  { branch, main, fallbackPath, discardIgnored = false, disposable = [], merge },
 ) {
   const path = findByBranch(root, branch) ?? fallbackPath;
   if (path === root)
@@ -348,7 +348,7 @@ export function cleanup(
       ...kept,
       reason: `${path} holds ${ignored.length} ignored file(s) that removal would delete`,
     };
-  const res = remove(root, { path, branch, onto: main });
+  const res = remove(root, { path, branch, onto: main, merge });
   const ok = res.removed && (res.branchDeleted || !commitOf(root, `refs/heads/${branch}`));
   return { ok, path, ...res, ...kept };
 }

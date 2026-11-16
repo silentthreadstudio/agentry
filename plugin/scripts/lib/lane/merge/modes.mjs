@@ -157,6 +157,7 @@ export function cleanupMode(lane) {
     fallbackPath: ledger.worktree ?? join(worktreesDir(root), id),
     discardIgnored: discard,
     disposable: spec.cleanup?.disposable ?? [],
+    merge,
   });
   const res =
     kept.removed && !kept.branchDeleted && dropChecked(lane)

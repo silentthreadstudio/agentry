@@ -144,6 +144,17 @@ function onMain(root, onto, branch) {
   );
 }
 
+// Did the land the ledger records (`merge`) put this branch on `onto`: its tip is the tip the land planned
+// from, and every pick the land planned is in `landed`, on `onto`'s history. `git cherry` can read a landed
+// branch as unlanded (a pick whose hunk context differs on main, a file merged by union), the land's own
+// record cannot. A record that proves less is no proof.
+function landedByLedger(root, onto, tip, merge) {
+  const { planned, landed } = merge ?? {};
+  if (merge?.tip !== tip || !Array.isArray(planned) || !Array.isArray(landed)) return false;
+  if (planned.length === 0 || landed.length !== planned.length) return false;
+  return landed.every((sha) => git(root, ["merge-base", "--is-ancestor", sha, onto]).status === 0);
+}
+
 function uncommitted(dir) {
   try {
     return porcelain(dir);
@@ -157,9 +168,10 @@ function uncommitted(dir) {
  *  name, never `branch -D` or a read by name, which on a case-insensitive filesystem can open, and
  *  delete, another branch that differs only in case. A branch with such a twin is kept, saying so. A worktree with uncommitted changes is kept unless `force`; a locked
  *  one is taken down, and a locked one whose directory is gone is unlocked and pruned. A branch with
- *  unlanded work is kept. `reason` says why anything was kept. Never throws on a git failure: `removed`
+ *  unlanded work is kept: a branch is landed when `merge` (the ledger's land record) proves it
+ *  (`landedByLedger`), else when every commit is on `onto` by patch (`onMain`). `reason` says why anything was kept. Never throws on a git failure: `removed`
  *  says it. */
-export function remove(root, { path, branch, onto = defaultBranch(root), force = false }) {
+export function remove(root, { path, branch, onto = defaultBranch(root), force = false, merge }) {
   const out = { removed: false, branchDeleted: false };
   if (existsSync(path)) {
     const dirty = force ? [] : uncommitted(path);
@@ -184,7 +196,7 @@ export function remove(root, { path, branch, onto = defaultBranch(root), force =
   );
   if (twin) return { ...out, reason: `${branch} has a case twin ${twin}: rename one first` };
   if (!onto) return { ...out, reason: "no main branch to compare against" };
-  if (!onMain(root, onto, tip))
+  if (!landedByLedger(root, onto, tip, merge) && !onMain(root, onto, tip))
     return { ...out, reason: `${branch} has commits that are not on ${onto}` };
   out.branchDeleted = git(root, ["update-ref", "-d", `refs/heads/${branch}`, tip]).status === 0;
   return out;

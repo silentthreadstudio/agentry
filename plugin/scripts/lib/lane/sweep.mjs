@@ -514,7 +514,8 @@ export function apply(root, found, { discardIgnored = false } = {}) {
       done.kept.push({ id: w.id, reason: why });
       continue;
     }
-    const res = remove(root, { path: w.path, branch: w.branch });
+    const merge = all.find((l) => l.id === w.id)?.merge;
+    const res = remove(root, { path: w.path, branch: w.branch, merge });
     if (!res.removed) {
       done.kept.push({ id: w.id, reason: res.reason });
       continue;

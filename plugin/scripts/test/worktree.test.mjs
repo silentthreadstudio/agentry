@@ -111,6 +111,60 @@ test("remove deletes the branch when its commits were cherry-picked onto main", 
   assert.deepEqual(res, { removed: true, branchDeleted: true });
 });
 
+// The land's own record: the lane's tip and the picks it put on main. A pick whose change reads
+// differently on main (other context, a file merged by union) has no patch match for `git cherry`.
+function landedOtherwise() {
+  const made = create(repo.dir, { id: "T-1", base: "main" });
+  const tip = commitFile(made.path, "f.txt", "f\n");
+  const landed = commitFile(repo.dir, "f.txt", "f\nunion-merged line\n", "landed another way");
+  return { made, tip, landed };
+}
+
+test("remove keeps a branch git cherry cannot match when no land record proves it", () => {
+  const { made } = landedOtherwise();
+  const res = remove(repo.dir, made);
+  assert.equal(res.branchDeleted, false);
+  assert.match(res.reason, /not on main/);
+});
+
+test("remove deletes a branch the ledger's land record proves landed, whatever git cherry says", () => {
+  const { made, tip, landed } = landedOtherwise();
+  const res = remove(repo.dir, { ...made, merge: { tip, planned: [tip], landed: [landed] } });
+  assert.deepEqual(res, { removed: true, branchDeleted: true });
+  assert.equal(git(repo.dir, "branch", "--list", "agentry/T-1"), "");
+});
+
+test("remove deletes a branch whose pick landed with other hunk context, by the land record", () => {
+  commitFile(repo.dir, "f.txt", "a\nb\nc\nd\ne\nf\ng\n");
+  const made = create(repo.dir, { id: "T-1", base: "main" });
+  const tip = commitFile(made.path, "f.txt", "a\nb\nc\nD\ne\nf\ng\n", "feat: d");
+  commitFile(repo.dir, "f.txt", "A\nb\nc\nd\ne\nf\ng\n", "main edits the context");
+  git(repo.dir, "cherry-pick", tip);
+  const picked = git(repo.dir, "rev-parse", "HEAD");
+  assert.match(
+    git(repo.dir, "cherry", "main", "agentry/T-1"),
+    /^\+/,
+    "git cherry reads it unlanded",
+  );
+  const res = remove(repo.dir, { ...made, merge: { tip, planned: [tip], landed: [picked] } });
+  assert.deepEqual(res, { removed: true, branchDeleted: true });
+});
+
+test("remove ignores a land record that proves less: another tip, a pick not on main, a short list", () => {
+  const { made, tip, landed } = landedOtherwise();
+  const side = git(repo.dir, "commit-tree", "-m", "never on main", `${landed}^{tree}`);
+  const proofs = [
+    { tip: landed, planned: [tip], landed: [landed] }, // the branch moved since the land planned it
+    { tip, planned: [tip], landed: [side] }, // a landed pick main's history does not hold
+    { tip, planned: [tip, tip], landed: [landed] }, // a planned pick that did not land
+    { tip, planned: [], landed: [] },
+  ];
+  for (const merge of proofs) {
+    const res = remove(repo.dir, { ...made, merge });
+    assert.equal(res.branchDeleted, false, JSON.stringify(merge));
+  }
+});
+
 test("remove takes down a locked worktree (-f -f)", () => {
   const made = create(repo.dir, { id: "T-1", base: "main" });
   git(repo.dir, "worktree", "lock", "--reason", "agent running", made.path);
