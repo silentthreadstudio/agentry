@@ -608,6 +608,44 @@ test("keepAll copies every ignored file that is not disposable, and the removal 
   assert.ok(!existsSync(path));
 });
 
+for (const [label, ignore, disposable, keep, file] of [
+  [
+    "cleanup.disposable build/**",
+    "build/\n",
+    ["build/**"],
+    ["build/report.html"],
+    "build/report.html",
+  ],
+  ["the default dist/**", "dist/\n", [], ["dist/notes.md"], "dist/notes.md"],
+  [
+    "a keep glob with a wildcard folder",
+    "build/\n",
+    ["build/**"],
+    ["**/*.html"],
+    "build/report.html",
+  ],
+]) {
+  test(`a keep glob naming a file in a disposable folder (${label}) copies it before the removal`, () => {
+    const path = landedIgnoring(ignore);
+    plant(path, file, file.replace(/[^/]+$/, "junk.o"));
+    const found = ignoredIn(path, disposable, keep);
+    assert.deepEqual(found.kept, [file.replace(/[^/]+$/, "")]);
+    const res = cleanup(repo.dir, {
+      branch: "b",
+      main: "main",
+      fallbackPath: path,
+      disposable,
+      keep,
+      into: keptDir(),
+    });
+    assert.equal(res.ok, true, JSON.stringify(res));
+    assert.deepEqual(res.copied, [file]);
+    assert.equal(readFileSync(join(keptDir(), file), "utf8"), "x");
+    assert.ok(!existsSync(join(keptDir(), file.replace(/[^/]+$/, "junk.o"))));
+    assert.ok(!existsSync(path));
+  });
+}
+
 test("a copy that fails keeps the worktree: nothing is removed", () => {
   const path = landedIgnoring("exports/\n");
   plant(path, "exports/a.json");

@@ -401,6 +401,22 @@ function entryMatcher(globs) {
   };
 }
 
+// Could a `keep` glob match a file under the folder entry `entry` (`dist/`)? A glob segment with a wildcard
+// may; a literal one must be the folder's own. A glob that ends at or above the folder names the folder, which
+// `entryMatcher` already answers.
+function keepMayHold(keep, entry) {
+  const parts = entry.replace(/\/$/, "").split("/");
+  return keep.some((glob) => {
+    const segs = glob.replace(/\/+$/, "").split("/");
+    for (let i = 0; i < parts.length; i++) {
+      if (i >= segs.length) return false;
+      if (/[*?[{]/.test(segs[i])) return true;
+      if (segs[i] !== parts[i]) return false;
+    }
+    return segs.length > parts.length;
+  });
+}
+
 // The files under `rel` (a path in `dir`), as paths from `dir` (a link counts as a file). A folder git
 // cannot read is yielded as itself: it stays counted.
 function* filesUnder(dir, rel) {
@@ -434,7 +450,14 @@ export function ignoredIn(dir, globs = [], keep = []) {
   const classOf = (path) => (isKept(path) ? "kept" : isDisposable(path) ? "disposable" : "ignored");
   const out = { ignored: [], disposable: [], kept: [] };
   for (const entry of found) {
-    const own = classOf(entry);
+    let own = classOf(entry);
+    // A disposable folder holding a file a `keep` glob names is kept: the file is copied out first.
+    if (own === "disposable" && entry.endsWith("/") && keepMayHold(keep, entry))
+      for (const file of filesUnder(dir, entry))
+        if (isKept(file)) {
+          own = "kept";
+          break;
+        }
     if (own !== "ignored") {
       out[own].push(entry);
       continue;
@@ -456,7 +479,7 @@ export function ignoredIn(dir, globs = [], keep = []) {
 
 /** Copy ignored files of the worktree `dir` to `into/<path>`, before a removal takes them: the ones a `keep`
  *  glob matches, and with `all` every one that is not disposable too. A wholly disposable folder is never
- *  walked (a `node_modules` is no file to read) unless `keep` names it. `{ files }` the paths copied from `dir`
+ *  walked (a `node_modules` is no file to read) unless `keep` names it or a `keep` glob could match under it. `{ files }` the paths copied from `dir`
  *  (none: `into` is not made), or `{ error }` when a copy fails: the removal must not go on then. */
 export function keepIgnored(dir, into, { keep = [], all = false, disposable = [] } = {}) {
   if ((keep.length === 0 && !all) || !existsSync(dir)) return { files: [] };
@@ -465,7 +488,7 @@ export function keepIgnored(dir, into, { keep = [], all = false, disposable = []
   const files = [];
   try {
     for (const entry of ignoredFiles(dir)) {
-      if (isDisposable(entry) && !isKept(entry)) continue;
+      if (isDisposable(entry) && !isKept(entry) && !keepMayHold(keep, entry)) continue;
       const found = entry.endsWith("/") ? [...filesUnder(dir, entry)] : [entry];
       files.push(...found.filter((f) => isKept(f) || (all && !isDisposable(f))));
     }
