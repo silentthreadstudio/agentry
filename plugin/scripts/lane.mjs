@@ -8,4 +8,8 @@ import { fileURLToPath } from "node:url";
 import { main } from "./lib/cli/router.mjs";
 
 const HERE = dirname(fileURLToPath(import.meta.url));
-await main(process.argv.slice(2), { dir: join(HERE, "lib", "lane", "cli"), name: "lane", bareIndex: true });
+await main(process.argv.slice(2), {
+  dir: join(HERE, "lib", "lane", "cli"),
+  name: "lane",
+  bareIndex: true,
+});

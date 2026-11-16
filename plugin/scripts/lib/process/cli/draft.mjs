@@ -142,7 +142,8 @@ function applyRule(draft, { root, spec }, { write, force }) {
   try {
     apply(join(root, prompt), edit, { preview: !write });
   } catch (e) {
-    if (e instanceof Similar) return fail(e.message, `board draft apply ${draft.n} --force --apply`);
+    if (e instanceof Similar)
+      return fail(e.message, `board draft apply ${draft.n} --force --apply`);
     if (e instanceof WriteError) return fail(e.message);
     throw e;
   }

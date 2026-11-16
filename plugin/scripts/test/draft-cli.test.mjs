@@ -303,11 +303,17 @@ test("a rule like one already in its section is flagged, refused on --apply and 
   assert.match(preview.stdout, /\n! similar rule already at CONDUCTOR\.md:5\n/);
   const refused = board(root, "draft", "apply", "1", "--apply");
   assert.equal(refused.status, 2);
-  assert.match(refused.stderr, /similar rule already at CONDUCTOR\.md:5 → board draft apply 1 --force/);
+  assert.match(
+    refused.stderr,
+    /similar rule already at CONDUCTOR\.md:5 → board draft apply 1 --force/,
+  );
   assert.doesNotMatch(read(root, "CONDUCTOR.md"), /2026/);
   const forced = board(root, "draft", "apply", "1", "--force", "--apply");
   assert.equal(forced.status, 0, forced.stdout + forced.stderr);
-  assert.match(read(root, "CONDUCTOR.md"), /- Existing rule\.\n- \*\*EXISTING\*\* rule\. \(2026-11-16\)\n/);
+  assert.match(
+    read(root, "CONDUCTOR.md"),
+    /- Existing rule\.\n- \*\*EXISTING\*\* rule\. \(2026-11-16\)\n/,
+  );
 });
 
 test("a rule that is not like any line of its section is written without a flag", () => {

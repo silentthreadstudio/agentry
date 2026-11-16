@@ -261,7 +261,8 @@ test("apply writes nothing when the edit itself refuses", () => {
   assert.equal(readFileSync(file, "utf8"), board);
 });
 
-const RULES = "# P\n\n## Rules\n\n- Run the **gate** before a merge. (2026-11-01)\n- Never push unasked.\n\n## Other\n\n- Ship it.\n";
+const RULES =
+  "# P\n\n## Rules\n\n- Run the **gate** before a merge. (2026-11-01)\n- Never push unasked.\n\n## Other\n\n- Ship it.\n";
 
 test("similarLine finds the line a rule matches once case, **, parenthesised dates and spacing are set aside", () => {
   const line = "- RUN the gate   before a merge.";

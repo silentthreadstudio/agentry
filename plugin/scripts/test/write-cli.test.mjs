@@ -462,9 +462,94 @@ test("add --fields - reads the fields from stdin", () => {
   const BOARD = join(FIXTURES, "..", "..", "board.mjs");
   const res = spawnSync(
     "node",
-    [BOARD, "add", "task", "--fields", "-", "--root", root, "--process", join(root, "process.json")],
+    [
+      BOARD,
+      "add",
+      "task",
+      "--fields",
+      "-",
+      "--root",
+      root,
+      "--process",
+      join(root, "process.json"),
+    ],
     { input: '{"id":"W4","sprint":"A1","note":"Fourth"}', encoding: "utf8" },
   );
   assert.equal(res.status, 0, res.stdout + res.stderr);
   assert.match(res.stdout, /^would add task W4\n/);
+});
+
+const A1 = "board/sprints/A1_one.md";
+const A2 = "board/sprints/A2_two.md";
+
+test("set on the parent field moves the item's row from the old parent's file to the new one", () => {
+  const root = copy("write");
+  assert.deepEqual(findings(root), []);
+  const result = call(set, root, ["task", "W3", "sprint=A1", "--apply"]);
+  assert.equal(result.exit, 0, result.out);
+  assert.match(result.out, /row W3 moved to sprints\/A1_one\.md from sprints\/A2_two\.md/);
+  assert.match(text(root, "board/BOARD.md"), /\| W3 {3}\| A1 {5}\| todo/);
+  assert.doesNotMatch(text(root, A2), /W3/);
+  assert.match(text(root, A1), /\| W2 {3}\| The second \| W1 {3}\|\n\| W3 \| The third \| W2 \|\n/);
+  assert.deepEqual(findings(root), []);
+});
+
+test("the preview of a parent move names the move and writes nothing", () => {
+  const root = copy("write");
+  const before = [A1, A2, "board/BOARD.md"].map((f) => text(root, f));
+  const result = call(set, root, ["task", "W3", "sprint=A1"]);
+  assert.equal(result.exit, 0, result.out);
+  assert.match(result.out, /^would set task W3 sprint=A1 \(BOARD\.md\)\n {2}row W3 moved to /);
+  assert.deepEqual(
+    [A1, A2, "board/BOARD.md"].map((f) => text(root, f)),
+    before,
+  );
+});
+
+test("set on the parent field refuses a new parent with no file, naming it, and writes nothing", () => {
+  const root = copy("write");
+  writeFileSync(
+    join(root, "board/BOARD.md"),
+    text(root, "board/BOARD.md").replace(
+      "| A2     | todo   |",
+      "| A2     | todo   |\n| A3     | todo   |",
+    ),
+  );
+  const before = [A2, "board/BOARD.md"].map((f) => text(root, f));
+  const result = call(set, root, ["task", "W3", "sprint=A3", "--apply"]);
+  assert.equal(result.exit, 2);
+  assert.match(result.out, /sprint A3 has no file \(sprints\/A3_\*\.md\)/);
+  assert.deepEqual(
+    [A2, "board/BOARD.md"].map((f) => text(root, f)),
+    before,
+  );
+});
+
+test("set on the parent field refuses when the row is not in the old parent's file, naming that file", () => {
+  const root = copy("write");
+  writeFileSync(join(root, A2), text(root, A2).replace("| W3   | The third | W2   |\n", ""));
+  const result = call(set, root, ["task", "W3", "sprint=A1", "--apply"]);
+  assert.equal(result.exit, 2);
+  assert.match(result.out, /sprints\/A2_two\.md: no row "W3" under "Tasks"/);
+  assert.match(text(root, "board/BOARD.md"), /\| W3 {3}\| A2 /);
+});
+
+test("set on the parent field to an `also` value removes the row from the old file only", () => {
+  const root = copy("write");
+  const spec = JSON.parse(text(root, "process.json"));
+  spec.kinds.task.fields.sprint.also = ["LATER"];
+  writeSpec(root, spec);
+  const result = call(set, root, ["task", "W3", "sprint=LATER", "--apply"]);
+  assert.equal(result.exit, 0, result.out);
+  assert.match(result.out, /row W3 removed from sprints\/A2_two\.md/);
+  assert.doesNotMatch(text(root, A2), /W3/);
+  assert.match(text(root, "board/BOARD.md"), /\| W3 {3}\| LATER /);
+});
+
+test("set on a field that is not the parent moves nothing", () => {
+  const root = copy("write");
+  const result = call(set, root, ["task", "W3", "note=Changed", "--apply"]);
+  assert.equal(result.exit, 0, result.out);
+  assert.equal(result.out, "set task W3 note=Changed (BOARD.md)");
+  assert.match(text(root, A2), /W3/);
 });

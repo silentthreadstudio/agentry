@@ -82,6 +82,20 @@ export function setKey(text, { key, value }) {
   return out.join("\n");
 }
 
+/** Remove the row whose `idColumn` is `id` from the table under `heading`: `{ text, cells }`, `cells`
+ *  mapping each header name to the removed row's cell. Zero or several matching rows are refused. */
+export function takeRow(text, { heading, idColumn, id }) {
+  const table = tableUnder(text, heading);
+  if (!table.header.includes(idColumn))
+    refuse(`the "${heading}" table has no column "${idColumn}"`);
+  const hits = table.rows.filter((r) => md.plain(r.cells[idColumn]) === id);
+  if (hits.length === 0) refuse(`no row "${id}" under "${heading}"`);
+  if (hits.length > 1) refuse(`"${id}" is on ${hits.length} rows under "${heading}"; not guessing`);
+  const out = rawLines(text);
+  out.splice(hits[0].line - 1, 1);
+  return { text: out.join("\n"), cells: hits[0].cells };
+}
+
 /** Insert a row into the table under `heading`. `cells` maps header name → text (headers it omits
  *  stay empty; names the table lacks are refused). `at` is "end", or "after-last:<column>": after
  *  the last row whose cell in that column equals the new row's, else at the end. Neighbours are
