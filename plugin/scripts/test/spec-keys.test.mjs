@@ -394,3 +394,24 @@ test("only merged may finish a task, and it writes what the done rules read", ()
   dated.kinds.task.fields.ok = { column: "OK", type: "date" };
   assert.ok(flags(dated, /^rules\[1\] \(done-signoff\) needs a dated sign-off on a done task/));
 });
+
+test("cleanup takes disposable and keep globs, merge takes sidecar suffixes: each key checked", () => {
+  const spec = (extra) => ({ ...structuredClone(BASE), ...extra });
+  assert.deepEqual(messages(spec({})), []);
+  assert.deepEqual(messages(spec({ cleanup: { keep: ["exports/**"] } })), []);
+  assert.deepEqual(messages(spec({ cleanup: { disposable: ["build"], keep: ["exports"] } })), []);
+  assert.deepEqual(messages(spec({ merge: { sidecars: [".uid", ".import"] } })), []);
+  for (const bad of [
+    { cleanup: { keep: [] } },
+    { cleanup: { keep: [3] } },
+    { merge: { sidecars: [] } },
+    { merge: { sidecars: ["uid"] } },
+    { merge: { sidecars: [".a/b"] } },
+    { merge: { sidecars: [".uid"], other: 1 } },
+  ])
+    assert.ok(messages(spec(bad)).length > 0, JSON.stringify(bad));
+  assert.match(
+    messages(spec({ merge: { sidecars: ["uid"] } })).join("\n"),
+    /merge\.sidecars\[0\].*file suffix like "\.uid"/,
+  );
+});

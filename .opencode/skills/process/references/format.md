@@ -41,7 +41,8 @@ No `version`, and every key is optional.
 | `extensions` | no | Repo skills Agentry's commands run as extra checks: `merge`, `start` and `close` (`<phase>.checks`); at least one. |
 | `conductor` | no | The repo's conductor prompt and the heading standing rules are appended under. |
 | `guard` | no | `{ "allow": [globs] }`: main-checkout files a running lane's guard lets change. |
-| `cleanup` | no | `{ "disposable": [globs] }`: ignored files a lane's cleanup discards without asking. |
+| `cleanup` | no | `{ "disposable": [globs], "keep": [globs] }`, each optional: ignored files a lane's cleanup discards without asking, and ignored files it copies out before it removes anything. |
+| `merge` | no | `{ "sidecars": [suffixes] }`: file suffixes (`".uid"`, `".import"`) whose files count as owned when the file they follow is, in the preflight's owns row. |
 | `exec` | no | `{ "preset": "lean" \| "standard" \| "strict", "verify": "all" \| "flagged" \| "none", "noteRounds": 0–3, "final": "never" \| "after-fix" \| "always", "rebase": "recheck" \| "gate", "flagField": "<field>", "idleMinutes": ≥ 5, "kinds": { … } }`, every key optional. `preset` (default `standard`) sets `verify` (lean `flagged`, else `all`), `noteRounds` (0 / 1 / 3), `final` (`never` / `after-fix` / `always`), `rebase` (`gate` / `recheck` / `recheck`) and the `gate.roles` defaults (strict: build and merge `full`); a key given here wins, `gate.roles` per role. `verify`: which items get an independent verifier; `noteRounds`: the notes-fix rounds a lane may run; `final`: when a fresh final verifier follows a recheck (`after-fix`: unless it covered every note sent back on a tip moved only by fix commits); `rebase`: what checks a rebase that cleared a land conflict; `flagField` (default `flag`): the flag field `verify` reads, which every kind exec runs must have as a flag field; `idleMinutes` (default 20): when a building lane is idle; `kinds`: the kinds it runs beside the lifecycle's (debt). A `flagged` route, given or from `lean`, with no such field is refused at load naming its source. See "exec and models" and "exec kinds". |
 | `models` | no | `{ "build": <model>, "verify": { "default", "ui", "flagged" } }`: the model each exec dispatch names. Each `<model>` is a name (`"sonnet"`) or `{ "default": "<model>", "paths": [{ "when": { "any": [<globs>] }, "model": "<model>" }] }` (both keys required, `paths` non-empty): the first entry whose `any` glob matches one of the item's owned files names it (the gate tiers' glob matching), else `default`. A contract bullet `- **Model:** <model>` (builder rounds) or `- **Model (verify):** <model>` (verifier rounds) wins over both, and a step's `(model: <m>)` marker wins over the bullet for its run's builder rounds. Each dispatch's `model:` line names its source: `opus (step 1)`, `opus (contract)`, `opus (models.build.paths[0]: src/main/**)`, `sonnet (models.build)`, `sonnet (models.build.default)`. `board explain` warns `! models.verify.ui is unused` when `exec.verify` is `flagged` or `none` and `verify.flagged` is set (an unflagged UI task gets no verifier, a flagged one takes `verify.flagged`), and so does `exec start`'s route line for an unflagged UI task. See "exec and models". |
 | `briefs` | no | `{ "build": ["<line>", …], "verify": ["<line>", …] }`: repo policy lines printed in every builder or verifier brief. See "briefs and commits". |
@@ -496,7 +497,8 @@ In `workflow.json`:
 
 ```json
 "guard": { "allow": ["docs/STATUS.md", "docs/plans/**"] },
-"cleanup": { "disposable": ["**/.godot", "**/*.translation", "build"] }
+"cleanup": { "disposable": ["**/.godot", "**/*.translation", "build"], "keep": ["exports/**"] },
+"merge": { "sidecars": [".uid", ".import"] }
 ```
 
 - `guard.allow` is a non-empty list of globs (from the repository root; `**` crosses directories, as in
@@ -510,3 +512,12 @@ In `workflow.json`:
   asking (build output, import caches). A wholly ignored directory is matched as its path (`build`,
   `**/.godot`; `build/**` also takes `build` itself). Any other ignored file still stops the cleanup and is
   listed for the owner.
+- `cleanup.keep` is a non-empty list of globs (same matching) for ignored files worth saving. Before any removal
+  they are copied to `.agentry/run/process/runs/<id>/kept/<path>` and the directory is printed, so a file it names
+  never stops the cleanup and is never lost; `keep` wins over `disposable`. `agentry lane merge <id> --cleanup
+  --keep-ignored` does the same for every ignored file that is not disposable (instead of refusing or
+  `--discard-ignored`). `lane sweep`, `lane exec cut` and `lane exec restart` honour `cleanup.keep` the same way
+  (a restart's copy moves to the archived run directory with the lane's other files).
+- `merge.sidecars` is a non-empty list of suffixes, each `.` and a name (`".uid"`). The preflight's `owns` row
+  counts `x.gd.uid` as owned when `x.gd` is, so an engine's generated companions do not read as files outside
+  the contract. Default: none.

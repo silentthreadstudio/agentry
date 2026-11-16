@@ -166,6 +166,12 @@ const policyLines = (v, at, bad) => {
   if (Array.isArray(v) && v.length > BRIEF_LINES)
     bad(at, `should have at most ${BRIEF_LINES} lines`);
 };
+// A suffix a sidecar file carries after its owner's whole name (`x.gd` → `x.gd.uid`).
+const sidecar = (v, at, bad) => {
+  text(v, at, bad);
+  if (typeof v === "string" && v && !/^\.[^/\s]+$/.test(v))
+    bad(at, 'should be a file suffix like ".uid"');
+};
 const pattern = (v, at, bad) => {
   text(v, at, bad);
   if (typeof v === "string" && v) regex(v, at, bad);
@@ -181,7 +187,8 @@ export const workflowSchema = shape({
   extensions,
   conductor: shape({ "prompt!": repoPath, rules: text }, FULL),
   guard: shape({ "allow!": globs }, FULL),
-  cleanup: shape({ "disposable!": globs }, FULL),
+  cleanup: shape({ disposable: globs, keep: globs }, FULL),
+  merge: shape({ sidecars: filled(sidecar) }, FULL),
   exec: execSchema(record(execKindSchema)),
   models: modelsSchema,
   briefs: shape({ build: policyLines, verify: policyLines }, FULL),
