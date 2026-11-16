@@ -1,6 +1,7 @@
 // exec/cut/recover — a cut a kill left mid-land, rolled back by the cut itself on `--apply`: only what is
 // the cut's own by identity (its kept commit, its board commit, its board cells) comes off main; anything
 // else on main refuses with nothing changed.
+import { posix } from "node:path";
 import { cellText, diffBoard } from "../../../process/board-diff.mjs";
 import { applyEvent } from "../../../process/lifecycle.mjs";
 import { readProcess } from "../../../process/read.mjs";
@@ -83,6 +84,17 @@ function strangeBoards(ctx, merge, files) {
   return files.filter((f) => bad.has(f));
 }
 
+/** The board file the cut's own `cut` word is written in, even when it is written already (a kill after
+ *  it left the preview nothing to write): the file the rollback must be free to put back to HEAD. */
+function cutWordFiles({ spec, id, kind }, model) {
+  const life = model && lifecycleOf(spec, kind);
+  if (!life) return [];
+  const def = spec.kinds[life.kind];
+  const item = (own(model.kinds, life.kind)?.items ?? []).find((i) => i.id === id);
+  const file = def.at.table !== undefined ? def.at.table : item?.file;
+  return file ? [posix.join(spec.root, file)] : [];
+}
+
 /** A cut a kill left mid-land (`merging`, `merge.cut`), rolled back by the cut itself: the gate it left
  *  running stopped, a cherry-pick in progress aborted, main reset to `preHead` with `git reset --keep`
  *  when its first-parent commits since are only the cut's own (`cutsOwn`), board files the cut was
@@ -124,10 +136,13 @@ export function recoverCut(ctx, ledger) {
       `the stuck cut's board commit ${short(merge.cutBoard)} is on ${main} and holds the writes it set aside: nothing rolled back; close its ledger and remove its worktree by hand`,
     );
   const writing = [...new Set([...(merge.carry?.files ?? []), ...(merge.writes?.files ?? [])])];
-  const event = spec.lifecycle
-    ? applyEvent({ ...ctx, model: readProcess({ root, spec }), event: "cut", preview: true })
-    : { writes: [] };
-  const boards = new Set([...writing, ...event.writes.map((w) => w.file)]);
+  const model = spec.lifecycle ? readProcess({ root, spec }) : null;
+  const event = model ? applyEvent({ ...ctx, model, event: "cut", preview: true }) : { writes: [] };
+  const boards = new Set([
+    ...writing,
+    ...event.writes.map((w) => w.file),
+    ...cutWordFiles(ctx, model),
+  ]);
   const dirty = (statusEntries(root) ?? ["?? git status failed"]).map((e) => e.slice(3));
   const stray = dirty.filter((f) => !boards.has(f));
   if (stray.length)
