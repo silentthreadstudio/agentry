@@ -8,8 +8,8 @@ scheme is pragmatic: patch releases carry fixes, docs, and small additions.
 
 ## [0.5.0] — 2026-11-16
 
-Field fixes from the game's P3b–P3f sprints. `lane exec` steps stop costing rounds (facts, report intake and
-clearer next steps), the board, draft and session commands close the gaps the sprints found, and a land now
+Fixes found in field use. `lane exec` steps stop costing rounds (facts, report intake and
+clearer next steps), the board, draft and session commands close gaps found in use, and a land now
 owns main while it runs.
 
 ### Upgrade notes
