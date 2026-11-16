@@ -37,7 +37,8 @@ scheme is pragmatic: patch releases carry fixes, docs, and small additions.
 - `cleanup.keep` in the workflow file: ignored files matching its globs are copied to
   `.agentry/run/process/runs/<id>/kept/<path>` before any removal, and the path is printed. The land's cleanup,
   `lane sweep`, `lane exec cut` and `lane exec restart` all honour it. `lane merge <id> --cleanup --keep-ignored`
-  copies every ignored file that is not disposable the same way instead of refusing.
+  copies every ignored file that is not disposable the same way instead of refusing. A symlink is never copied:
+  it is reported as `skipped link: <path>`, and a copy whose folder under `kept/` leads outside it is refused.
 - Each step of a land prints its row on stderr as it finishes, and the gate's log path before the gate starts.
 
 ### Changed

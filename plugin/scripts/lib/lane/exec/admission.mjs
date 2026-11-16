@@ -80,6 +80,12 @@ export function refuseDuringLand(root) {
   if (landing) refuse(ledgers.landRefusal(landing));
 }
 
+// The same refusal for a ledger in state `merging` whose land no longer counts as holding main (a cut past
+// its board commit whose process is gone): the lane is still the land's, so a hold or an owns edit waits.
+export function refuseMerging(ledger) {
+  if (ledger.state === "merging") refuse(ledgers.landRefusal(ledgers.landOf(ledger)));
+}
+
 // A lane cut while another lands could carry picks a red gate then takes off main: `start` waits.
 export function refuseMidLand(root) {
   const landing = ledgers

@@ -91,6 +91,8 @@ function render(found, done, discardIgnored, note) {
         ? ` (would keep ${w.kept.length} ignored path(s) per cleanup.keep, copied under runs/${w.id}/kept)`
         : "";
     row(`${verb} worktree ${w.id}${why && verb !== "removed" ? `: ${why}` : ""}${discard}${copy}`);
+    for (const link of done?.removed.find((r) => r.id === w.id)?.skippedLinks ?? [])
+      row(`  skipped link: ${link}`);
   }
   for (const w of found.unknown) row(`unknown worktree ${w.path} (left alone)`);
   for (const p of found.strays) {

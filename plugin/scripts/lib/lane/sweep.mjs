@@ -535,6 +535,7 @@ export function apply(root, found, { discardIgnored = false, keep = [], disposab
       branchDeleted: res.branchDeleted,
       ...(branchKept && { branchKept }),
       ...(copied.files.length > 0 && { keptIn: into, keptFiles: copied.files }),
+      ...(copied.skipped.length > 0 && { skippedLinks: copied.skipped }),
     });
     // Said with the plan's warnings too, which the sweep's CLI prints after the result.
     if (branchKept) found.warnings.push(branchKept);

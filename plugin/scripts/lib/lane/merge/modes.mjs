@@ -190,6 +190,7 @@ export function cleanupMode(lane) {
     ...(res.disposable ? [`discarded ${res.disposable.length} disposable path(s)`] : []),
     ...(res.ignored && !res.copied ? [`discarded ${res.ignored.length} ignored file(s)`] : []),
     ...(res.copied ? [`kept ${res.copied.length} ignored file(s) in ${into}`] : []),
+    ...(res.skippedLinks ?? []).map((p) => `skipped link: ${p}`),
   ];
   const detail = `removed ${res.path}; deleted ${ledger.branch}`;
   return done(0, lane, [ok("cleanup", detail, more)], null);

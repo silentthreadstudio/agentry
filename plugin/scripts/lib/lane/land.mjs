@@ -14,10 +14,9 @@ import {
   mkdirSync,
   readFileSync,
   readdirSync,
-  readlinkSync,
-  symlinkSync,
+  realpathSync,
 } from "node:fs";
-import { dirname, join } from "node:path";
+import { dirname, join, sep } from "node:path";
 import { isAncestor as ancestor, commitOf, mergeBase } from "../process/git.mjs";
 import { globMatch } from "../process/glob.mjs";
 import { first } from "./fmt.mjs";
@@ -381,7 +380,14 @@ export function cleanup(
     };
   const res = remove(root, { path, branch, onto: main, merge });
   const ok = res.removed && (res.branchDeleted || !commitOf(root, `refs/heads/${branch}`));
-  return { ok, path, ...res, ...kept, ...(copied.files.length > 0 && { copied: copied.files }) };
+  return {
+    ok,
+    path,
+    ...res,
+    ...kept,
+    ...(copied.files.length > 0 && { copied: copied.files }),
+    ...(copied.skipped.length > 0 && { skippedLinks: copied.skipped }),
+  };
 }
 
 /** Ignored files every lane worktree's cleanup and the sweep discard without asking, on top of the
@@ -488,10 +494,11 @@ export function ignoredIn(dir, globs = [], keep = []) {
 
 /** Copy ignored files of the worktree `dir` to `into/<path>`, before a removal takes them: the ones a `keep`
  *  glob matches, and with `all` every one that is not disposable too. A wholly disposable folder is never
- *  walked (a `node_modules` is no file to read) unless `keep` names it or a `keep` glob could match under it. `{ files }` the paths copied from `dir`
- *  (none: `into` is not made), or `{ error }` when a copy fails: the removal must not go on then. */
+ *  walked (a `node_modules` is no file to read) unless `keep` names it or a `keep` glob could match under it.
+ *  `{ files, skipped }` the paths copied from `dir` (none: `into` is not made) and the links left out (never
+ *  copied), or `{ error }` when a copy fails or a folder in `into` leads outside it: the removal must not go on. */
 export function keepIgnored(dir, into, { keep = [], all = false, disposable = [] } = {}) {
-  if ((keep.length === 0 && !all) || !existsSync(dir)) return { files: [] };
+  if ((keep.length === 0 && !all) || !existsSync(dir)) return { files: [], skipped: [] };
   const isKept = entryMatcher(keep);
   const isDisposable = disposableMatcher(disposable);
   const files = [];
@@ -501,15 +508,25 @@ export function keepIgnored(dir, into, { keep = [], all = false, disposable = []
       const found = entry.endsWith("/") ? [...filesUnder(dir, entry)] : [entry];
       files.push(...found.filter((f) => isKept(f) || (all && !isDisposable(f))));
     }
-    for (const file of files) {
-      mkdirSync(dirname(join(into, file)), { recursive: true });
-      const from = join(dir, file);
-      // A link is copied as a link: `cpSync` without `recursive` refuses one that points at a directory.
-      if (lstatSync(from).isSymbolicLink()) symlinkSync(readlinkSync(from), join(into, file));
-      else cpSync(from, join(into, file));
+    const copy = files.filter((f) => !lstatSync(join(dir, f)).isSymbolicLink());
+    const skipped = files.filter((f) => !copy.includes(f));
+    if (copy.length === 0) return { files: [], skipped };
+    // A link holds no data and a copy of it could be written through later: it is reported, never copied.
+    mkdirSync(into, { recursive: true });
+    const root = realpathSync(into);
+    for (const file of copy) {
+      const to = join(into, file);
+      // A link already in `into` (a kept run's leftover) must not carry the copy out of it.
+      let up = dirname(to);
+      while (!existsSync(up)) up = dirname(up);
+      const parent = realpathSync(up);
+      if (parent !== root && !parent.startsWith(`${root}${sep}`))
+        return { error: `${file}: its folder in ${into} leads outside it` };
+      mkdirSync(dirname(to), { recursive: true });
+      cpSync(join(dir, file), to);
     }
+    return { files: copy, skipped };
   } catch (e) {
     return { error: e.message };
   }
-  return { files };
 }

@@ -233,15 +233,21 @@ export function landInProgress(root) {
       l.state === "merging" &&
       typeof l.merge?.step === "string" &&
       !NOTHING_ON_MAIN.includes(l.merge.step) &&
-      !l.merge.cutBoard,
+      // A cut past its board commit still has main writes to make (the guard.allow put-back, the ledger
+      // close): it counts while its process runs, and a dead or unknown one frees the writers.
+      !(l.merge.cutBoard && landOf(l).alive !== true),
   );
-  if (!lane) return null;
-  const holder = lane.merge.holder ?? null;
+  return lane ? landOf(lane) : null;
+}
+
+/** The land record of a ledger in state `merging`, as `landInProgress` answers (whether or not it holds main). */
+export function landOf(lane) {
+  const holder = lane.merge?.holder ?? null;
   return {
     id: lane.id,
-    step: lane.merge.step,
-    cut: Boolean(lane.merge.cut),
-    since: holder?.at ?? lane.merge.at ?? null,
+    step: lane.merge?.step,
+    cut: Boolean(lane.merge?.cut),
+    since: holder?.at ?? lane.merge?.at ?? null,
     holder,
     alive: holder ? alive(holder) : null,
   };

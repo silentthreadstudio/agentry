@@ -10,10 +10,9 @@ import { spawnSync } from "node:child_process";
 import {
   chmodSync,
   existsSync,
-  lstatSync,
   mkdirSync,
   readFileSync,
-  readlinkSync,
+  readdirSync,
   rmSync,
   symlinkSync,
   writeFileSync,
@@ -648,7 +647,7 @@ for (const [label, ignore, disposable, keep, file] of [
   });
 }
 
-test("a kept folder holding a link to a directory copies the link as a link, and the cleanup goes on", () => {
+test("a kept folder holding a link is never copied: the link is reported skipped, the cleanup goes on", () => {
   const path = landedIgnoring("dist/\n");
   plant(path, "dist/game.zip");
   const target = join(repo.dir, "elsewhere");
@@ -663,10 +662,23 @@ test("a kept folder holding a link to a directory copies the link as a link, and
   });
   assert.equal(res.ok, true, JSON.stringify(res));
   assert.ok(res.copied.includes("dist/game.zip"));
-  const copy = join(keptDir(), "dist", "link-out");
-  assert.equal(lstatSync(copy).isSymbolicLink(), true);
-  assert.equal(readlinkSync(copy), target);
+  assert.deepEqual(res.skippedLinks, ["dist/link-out"]);
+  assert.equal(existsSync(join(keptDir(), "dist", "link-out")), false);
   assert.ok(!existsSync(path));
+});
+
+test("keepIgnored refuses a copy whose folder in into is a link out, and writes nothing outside", () => {
+  const path = landedIgnoring("out/\n");
+  plant(path, "out/sub/planted.txt");
+  const outside = join(repo.dir, "outside");
+  mkdirSync(outside);
+  writeFileSync(join(outside, "secret.txt"), "outside\n");
+  mkdirSync(keptDir(), { recursive: true });
+  symlinkSync(outside, join(keptDir(), "out")); // left by an earlier run
+  const res = keepIgnored(path, keptDir(), { keep: ["out/**"] });
+  assert.match(res.error, /out\/sub\/planted\.txt: its folder in .* leads outside it/);
+  assert.deepEqual(readdirSync(outside), ["secret.txt"]);
+  assert.equal(readFileSync(join(outside, "secret.txt"), "utf8"), "outside\n");
 });
 
 test("a copy that fails keeps the worktree: nothing is removed", () => {

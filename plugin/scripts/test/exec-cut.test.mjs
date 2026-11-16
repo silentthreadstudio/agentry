@@ -16,6 +16,7 @@ import {
   readdirSync,
   realpathSync,
   rmSync,
+  symlinkSync,
   writeFileSync,
 } from "node:fs";
 import { tmpdir } from "node:os";
@@ -324,6 +325,48 @@ test("cleanup.keep: the cut copies the ignored files it names under runs/<id>/ke
   assert.equal(readFileSync(join(kept, "exports", "run.json"), "utf8"), "{}");
   assert.equal(readFileSync(join(kept, "shots", "a.png"), "utf8"), "png");
   assert.equal(existsSync(worktree), false);
+});
+
+// A worktree with `out/a.txt` and `out/sub`, a link to a folder outside the repo, under `cleanup.keep: out/**`.
+function withLink() {
+  const r = repo();
+  appendFileSync(join(r.root, ".git", "info", "exclude"), "out/\n");
+  const { worktree } = parked(r);
+  mkdirSync(join(worktree, "out"));
+  writeFileSync(join(worktree, "out", "a.txt"), "a");
+  const outside = temp("cut-outside-");
+  writeFileSync(join(outside, "secret.txt"), "outside\n");
+  symlinkSync(outside, join(worktree, "out", "sub"));
+  writeSpec(join(r.root, ".agentry"), { ...SPEC, cleanup: { keep: ["out/**"] } });
+  git(r.root, "add", ".agentry");
+  git(r.root, "commit", "-q", "-m", "chore: keep out");
+  return { r, worktree, outside };
+}
+
+test("cleanup.keep: a link in the worktree is reported as skipped, never copied, and the cut goes on", () => {
+  const { r, outside } = withLink();
+  const res = lane(r, "cut", "T1", "--decision", "D7", "--apply");
+  assert.equal(res.exit, 0, res.out);
+  const kept = join(runsDir(r.root), "T1", "kept");
+  assert.deepEqual(JSON.parse(res.out).skippedLinks, ["skipped link: out/sub"]);
+  assert.equal(readFileSync(join(kept, "out", "a.txt"), "utf8"), "a");
+  assert.equal(existsSync(join(kept, "out", "sub")), false);
+  assert.deepEqual(readdirSync(outside), ["secret.txt"]);
+});
+
+test("cleanup.keep: a link already in kept/ from an earlier run refuses the cut, nothing written outside", () => {
+  const { r, worktree, outside } = withLink();
+  const kept = join(runsDir(r.root), "T1", "kept");
+  mkdirSync(kept, { recursive: true });
+  symlinkSync(outside, join(kept, "out"));
+  const res = lane(r, "cut", "T1", "--decision", "D7", "--apply");
+  assert.equal(res.exit, 2, res.out);
+  assert.match(
+    res.out,
+    /could not keep the ignored files: out\/a\.txt: its folder in .* leads outside it/,
+  );
+  assert.deepEqual(readdirSync(outside), ["secret.txt"]);
+  assert.equal(existsSync(worktree), true);
 });
 
 test("a red gate on the kept commit rolls main back and leaves the lane as it was", () => {
@@ -1306,4 +1349,52 @@ test("a cut killed after its board commit is marked no longer holds main: writer
   assert.match(run(r, LANE, ["merge", "--status"]).out, /no land running/);
   const close = lane(r, "close", "T1");
   assert.doesNotMatch(close.out, /is landing/, close.out);
+});
+
+// A cut past its board commit with the record planted: its holder is `holder` ({ pid } or gone).
+function cutPastBoard(holder) {
+  const r = repo();
+  parked(r);
+  assert.equal(cutT1(r, "after|commit --quiet -m chore\\(board\\)|1").signal, "SIGKILL");
+  const l = ledgerOf(r.root, "T1");
+  const { carry: _c, writes: _w, ...merge } = l.merge;
+  const at = new Date().toISOString();
+  const cutBoard = git(r.root, "rev-parse", "HEAD");
+  const held = holder ? { holder: { pid: holder, start: null, at } } : {};
+  writeFileSync(
+    ledgerFile(r.root, "T1"),
+    `${JSON.stringify({ ...l, merge: { ...merge, cutBoard, ...held } }, null, 2)}\n`,
+  );
+  return r;
+}
+
+test("a cut past its board commit whose process still runs holds main: writers refuse", () => {
+  const r = cutPastBoard(process.pid);
+  const set = run(r, BOARD, T2_DONE);
+  assert.equal(set.exit, 2, set.out);
+  assert.match(set.out, /T1 is landing/);
+  for (const args of [
+    ["hold", "T1", "--for", "later", "--note", "x"],
+    ["owns", "T1", "--add", "docs/x.md", "--apply"],
+    ["restart", "T1"],
+  ]) {
+    const res = lane(r, ...args);
+    assert.equal(res.exit, 2, `${args[0]}: ${res.out}`);
+    assert.match(res.out, /T1 is landing|is mid-land|merging/, args[0]);
+  }
+});
+
+test("a cut past its board commit whose process is gone frees writers, yet hold and owns --apply still refuse it", () => {
+  const r = cutPastBoard(null);
+  assert.equal(run(r, BOARD, T2_DONE).exit, 0);
+  const before = readFileSync(ledgerFile(r.root, "T1"), "utf8");
+  for (const args of [
+    ["hold", "T1", "--for", "later", "--note", "x"],
+    ["owns", "T1", "--add", "docs/x.md", "--apply"],
+  ]) {
+    const res = lane(r, ...args);
+    assert.equal(res.exit, 2, `${args[0]}: ${res.out}`);
+    assert.match(res.out, /T1 is landing \(step \w+\)/, args[0]);
+  }
+  assert.equal(readFileSync(ledgerFile(r.root, "T1"), "utf8"), before);
 });

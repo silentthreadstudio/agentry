@@ -4,7 +4,7 @@ import { resolve } from "node:path";
 import * as ledgers from "../../../process/ledger.mjs";
 import { now } from "../../fmt.mjs";
 import { expects, parkedVerified } from "../../rounds.mjs";
-import { refuseDuringLand } from "../admission.mjs";
+import { refuseDuringLand, refuseMerging } from "../admission.mjs";
 import { mainTouched } from "../guard/main-guard.mjs";
 import { isFile, laneLine, mustLedger, refuse, saved, stepWith } from "../lane.mjs";
 import { view } from "../view.mjs";
@@ -20,6 +20,7 @@ export function run(ctx, id) {
   refuseDuringLand(root);
   if (!["owner", "later"].includes(holdFor)) refuse("--for takes owner or later");
   const ledger = mustLedger(root, id);
+  refuseMerging(ledger);
   const held = ledger.state === "held";
   const verified =
     parkedVerified(ledger) ||

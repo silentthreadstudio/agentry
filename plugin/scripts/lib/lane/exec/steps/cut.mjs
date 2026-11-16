@@ -163,5 +163,8 @@ export function run(ctx, id) {
     ...(savedIgnored.files.length && {
       keptIgnored: `${savedIgnored.files.length} ignored file(s) in ${join(ledgers.runDir(root, id), "kept")}`,
     }),
+    ...(savedIgnored.skipped.length && {
+      skippedLinks: savedIgnored.skipped.map((p) => `skipped link: ${p}`),
+    }),
   });
 }

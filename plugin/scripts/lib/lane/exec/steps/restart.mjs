@@ -148,12 +148,14 @@ export function run(ctx, id) {
   let kept = null;
   let keptTip = null;
   let drop = false;
-  const keptIgnored = () =>
-    savedIgnored.files.length
-      ? {
-          keptIgnored: `${savedIgnored.files.length} ignored file(s) in ${join(archived.runs, "kept")}`,
-        }
-      : {};
+  const keptIgnored = () => ({
+    ...(savedIgnored.files.length && {
+      keptIgnored: `${savedIgnored.files.length} ignored file(s) in ${join(archived.runs, "kept")}`,
+    }),
+    ...(savedIgnored.skipped.length && {
+      skippedLinks: savedIgnored.skipped.map((p) => `skipped link: ${p}`),
+    }),
+  });
   const again = (path, base) => {
     const restarted = {
       from: `${id}.${n}`,
