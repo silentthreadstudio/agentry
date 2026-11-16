@@ -232,7 +232,8 @@ export function landInProgress(root) {
     (l) =>
       l.state === "merging" &&
       typeof l.merge?.step === "string" &&
-      !NOTHING_ON_MAIN.includes(l.merge.step),
+      !NOTHING_ON_MAIN.includes(l.merge.step) &&
+      !l.merge.cutBoard,
   );
   if (!lane) return null;
   const holder = lane.merge.holder ?? null;
@@ -246,13 +247,16 @@ export function landInProgress(root) {
   };
 }
 
+/** The line that rolls a stuck cut back. */
+export const CUT_BACK = (id) =>
+  `roll its cut back with agentry lane exec cut ${id} --decision <D> --apply`;
+
 /** What a writer says when it refuses because `landing` (`landInProgress`'s answer) holds main. A holder
  *  that is gone is named so, with the lines that finish or close its land. */
-export const landRefusal = ({ id, step, alive: running, cut }) =>
-  running === false
-    ? `${id} is landing (step ${step}) but its process is gone: ${
-        cut
-          ? `roll its cut back with agentry lane exec cut ${id} --decision <D> --apply`
-          : `land it again to resume (agentry lane merge ${id} --message "<board commit message>"), or close it with agentry lane merge ${id} --resolve landed|rolled-back`
-      }; agentry lane merge --status shows it`
+export const landRefusal = ({ id, step, alive: running, cut }) => {
+  if (cut && running !== true)
+    return `${id} is landing (step ${step}) ${running === false ? "but its process is gone" : "as a cut that names no process"}: ${CUT_BACK(id)}; agentry lane merge --status shows it`;
+  return running === false
+    ? `${id} is landing (step ${step}) but its process is gone: land it again to resume (agentry lane merge ${id} --message "<board commit message>"), or close it with agentry lane merge ${id} --resolve landed|rolled-back; agentry lane merge --status shows it`
     : `${id} is landing (step ${step}): wait for it, or check \`agentry lane merge --status\``;
+};

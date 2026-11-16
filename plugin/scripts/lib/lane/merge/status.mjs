@@ -1,7 +1,7 @@
 // merge/status — `lane merge --status`: is a land running. The ledger in state `merging` before its board
 // commit names the land (`process/ledger.mjs`'s `landInProgress`), and the process it recorded says whether
 // that land still runs; the answer is the same one a refused writer is told.
-import { landInProgress } from "../../process/ledger.mjs";
+import { CUT_BACK, landInProgress } from "../../process/ledger.mjs";
 import { clock } from "../exec-view.mjs";
 
 const ALIVE = { true: "alive", false: "dead", null: "unknown" };
@@ -13,9 +13,7 @@ export function statusMode(root, { json }) {
   const landing = landInProgress(root);
   if (json) return { exit: 0, out: JSON.stringify({ landing }) };
   if (!landing) return { exit: 0, out: "no land running" };
-  const { id, step, since, alive } = landing;
-  return {
-    exit: 0,
-    out: `landing ${id} · step ${step} · since ${clock(since)} · ${ALIVE[alive]}`,
-  };
+  const { id, step, since, alive, cut } = landing;
+  const head = `landing ${id} · step ${step} · since ${clock(since)} · ${ALIVE[alive]}`;
+  return { exit: 0, out: cut && alive !== true ? `${head}\nnext: ${CUT_BACK(id)}` : head };
 }

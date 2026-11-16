@@ -31,7 +31,7 @@ import {
 import { carryWritesStep, putBackAllow } from "../../merge/aside.mjs";
 import { carryBackStep, giveBack, takeCarryStep } from "../../merge/carry.mjs";
 import { gateStep, rollBack } from "../../merge/gating.mjs";
-import { now, ok, save, setMerge, warn } from "../../merge/lane.mjs";
+import { holderOf, now, ok, save, setMerge, warn } from "../../merge/lane.mjs";
 import { mainStep } from "../../merge/main-row.mjs";
 import { refuse, stop } from "../lane.mjs";
 import { SHOWN, STUCK_STEP } from "./plan.mjs";
@@ -141,6 +141,7 @@ export function landCut(ctx, ledger, plan) {
     state: "merging",
     merge: {
       ...lane.ledger.merge,
+      holder: holderOf(lane),
       cut: true,
       preHead,
       planned: made ? [made] : [],
