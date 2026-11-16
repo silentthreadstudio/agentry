@@ -217,6 +217,7 @@ merge T-1 · agentry/T-1 → main
   ✓ commits 1 to land
             <SHA> feat: one
   · commits no rules (commits in the workflow file)
+  ✓ owns    1 files inside owns
   ✓ gate    full would run (full: the gate's only tier)
             worktree gate: full exit 0 on <SHA>; the land skips only when canSkip holds
   · checks  none named (extensions.merge.checks)
@@ -238,6 +239,11 @@ merge T-1 · agentry/T-1 → main
   · record  lifecycle off: nothing written to the board
   · commit  nothing written to the board, nothing to commit
 next: ask the owner to push main; on yes: lane merge T-1 --push --approved
+  ✓ main    main at <SHA>, clean
+  ✓ land    1 commit(s) picked onto <SHA>
+  ✓ gate    skipped: gate on <SHA>, tree identical
+  · record  lifecycle off: nothing written to the board
+  · commit  nothing written to the board, nothing to commit
 
 --- board fix: exit 0
 would fix 0, 0 left for you
