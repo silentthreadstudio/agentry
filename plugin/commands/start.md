@@ -2,7 +2,7 @@
 description: Open the session the same way every day — the conductor prompt, derived status with drift nudges and pending drafts, recall for the work in flight, the active mode and the owner's open questions, as five lines and one recommendation.
 ---
 
-Start the session. Run `agentry lane` from the main checkout, in the foreground. The details of every field: the `conducting` skill's `references/session.md`.
+Start the session. Run `agentry lane session start` from the main checkout, in the foreground. The details of every field: the `conducting` skill's `references/session.md`.
 
 Shell calls use `agentry`, the plugin's `bin/` command; where it is not on PATH, run `node "${CLAUDE_PLUGIN_ROOT}/scripts/board.mjs"` (or `lane.mjs`) with the same arguments.
 

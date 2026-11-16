@@ -57,9 +57,10 @@ async function index(dir, cli) {
 }
 
 /** Run `argv` against the subcommands in `dir`. `defaultSub` names the sub used when none is given
- *  (none given and no default → a usage error); `name` is the CLI's name in help and errors.
+ *  (none given and no default → a usage error, or with `bareIndex` the sub index and exit 0); `name`
+ *  is the CLI's name in help and errors.
  *  Returns `{ exit, out }`. */
-export async function route(argv, { dir, defaultSub, name: cli = "cli" }) {
+export async function route(argv, { dir, defaultSub, bareIndex, name: cli = "cli" }) {
   const rootArg = take(argv, "--root");
   const processArg = take(argv, "--process");
   for (const [name, value] of [
@@ -71,7 +72,7 @@ export async function route(argv, { dir, defaultSub, name: cli = "cli" }) {
   const processPath = resolve(processArg ?? join(root, ".agentry", "process.json"));
   const named = argv[0] && !argv[0].startsWith("-") ? argv.shift() : null;
   const helpAt = argv.indexOf("--help");
-  if (helpAt >= 0 && !named) return index(dir, cli);
+  if (!named && (helpAt >= 0 || (bareIndex && !defaultSub))) return index(dir, cli);
   const sub = named ?? defaultSub;
   if (!sub || !isSub(dir, sub)) {
     const why = sub ? `unknown subcommand "${sub}"` : "no subcommand";

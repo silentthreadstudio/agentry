@@ -2,7 +2,7 @@
 description: Close the session the same way every time — the owner's pending decision drafts, board fix, worktree and process cleanup (asks before applying), episodes for finished lanes, a short judgment note, and the handoff with the resume line.
 ---
 
-Close the session. Run `agentry lane` and `agentry board` from the main checkout, in the foreground. The details of every field: the `conducting` skill's `references/session.md`.
+Close the session. Run `agentry lane session close` and `agentry board` from the main checkout, in the foreground. The details of every field: the `conducting` skill's `references/session.md`.
 
 Shell calls use `agentry`, the plugin's `bin/` command; where it is not on PATH, run `node "${CLAUDE_PLUGIN_ROOT}/scripts/board.mjs"` (or `lane.mjs`) with the same arguments.
 

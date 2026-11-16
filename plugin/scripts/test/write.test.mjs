@@ -27,6 +27,7 @@ import {
   insertRow,
   setCell,
   setKey,
+  similarLine,
 } from "../lib/process/write.mjs";
 
 const BOARD = join(dirname(fileURLToPath(import.meta.url)), "fixtures/write/board");
@@ -258,4 +259,22 @@ test("apply writes nothing when the edit itself refuses", () => {
     /no row/,
   );
   assert.equal(readFileSync(file, "utf8"), board);
+});
+
+const RULES = "# P\n\n## Rules\n\n- Run the **gate** before a merge. (2026-11-01)\n- Never push unasked.\n\n## Other\n\n- Ship it.\n";
+
+test("similarLine finds the line a rule matches once case, **, parenthesised dates and spacing are set aside", () => {
+  const line = "- RUN the gate   before a merge.";
+  assert.equal(similarLine(RULES, { heading: "Rules", line }), 5);
+});
+
+test("similarLine finds a close paraphrase and the line it is on", () => {
+  const line = "- Always run the gate before a merge.";
+  assert.equal(similarLine(RULES, { heading: "Rules", line }), 5);
+});
+
+test("similarLine is null for an unrelated rule, a line in another section and a missing section", () => {
+  assert.equal(similarLine(RULES, { heading: "Rules", line: "- Keep commits small." }), null);
+  assert.equal(similarLine(RULES, { heading: "Rules", line: "- Ship it." }), null);
+  assert.equal(similarLine(RULES, { heading: "Absent", line: "- Never push unasked." }), null);
 });

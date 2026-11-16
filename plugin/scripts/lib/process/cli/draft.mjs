@@ -8,6 +8,10 @@
 // inside a linked worktree it refuses rather than write the edit in one checkout and the state in another. A
 // line of the drafts file that is not a draft is kept as written and named in the output of list, drop and
 // apply. `apply <n>` alone shows what it would write and writes nothing; `apply <n> --apply` writes it.
+// A decision whose why fills empty is flagged `! why is empty` and `--apply` refuses it without `--why`; a rule
+// that matches or closely resembles a line of its section is flagged `! similar rule already at <file>:<line>`
+// and `--apply` refuses it without `--force`. An empty rejected column is a `!` note only. `add --fields`
+// reads `@<path>` or `-` (stdin) as well as inline JSON.
 // `add` and `drop` write only the drafts file under `.agentry/run`, never the repo: holding a draft
 // is their job, and the drafts are the preview.
 //
@@ -20,8 +24,8 @@ import * as drafts from "../drafts.mjs";
 import { mainRoot, topLevel } from "../git.mjs";
 import { fit } from "../render.mjs";
 import { has, own } from "../spec/shape.mjs";
-import { WriteError, appendLine, apply } from "../write.mjs";
-import { run as addItem } from "./add.mjs";
+import { WriteError, appendLine, apply, similarLine } from "../write.mjs";
+import { run as addItem, fieldsText } from "./add.mjs";
 import { run as nextId } from "./next-id.mjs";
 
 export const help = {
@@ -29,7 +33,7 @@ export const help = {
     "draft add --fields '{…}' [--json]",
     "draft list [--json]",
     "draft drop <n> [--json]",
-    'draft apply <n> [--answer "…"] [--why "…"] [--apply] [--json]',
+    'draft apply <n> [--answer "…"] [--why "…"] [--force] [--apply] [--json]',
   ],
   purpose: "The owner's calls caught in conversation, held until the owner says OK.",
   args: {
@@ -37,10 +41,11 @@ export const help = {
     "<n>": "a pending draft's number (see draft list)",
   },
   flags: {
-    "--fields <json>":
-      'for add: {"kind":"decision"|"rule","answer":"…"} (why, question, unpicked, source)',
+    "--fields <json|@path|->":
+      'for add: {"kind":"decision"|"rule","answer":"…"} (why, question, unpicked, source), inline, from a file (@path) or stdin (-)',
     "--answer <text>": "for apply: write this answer instead of the draft's (kept as edited)",
     "--why <text>": "for apply, a decision: write this why instead of the draft's",
+    "--force": "for apply, a rule: write it although a similar rule is already in its section",
     "--apply": "for apply: write it (without: show what it would write, and write nothing)",
     "--json": "print the result as JSON (list: the pending drafts)",
   },
@@ -105,26 +110,49 @@ function applyDecision(draft, { root, spec, model }, write) {
     if (e instanceof WriteError) return fail(`drafts.decision.map: ${e.message}`);
     throw e;
   }
+  const warns = [];
+  if (has(def.map, "why") && !fields.why) {
+    if (write) return fail("why is empty", `board draft apply ${draft.n} --why "<text>" --apply`);
+    warns.push("! why is empty");
+  }
+  if (has(def.map, "rejected") && !fields.rejected) warns.push("! rejected is empty");
   const args = [def.kind, "--fields", JSON.stringify({ ...fields, id: id.out })];
   const added = addItem(write ? [...args, "--apply"] : args, { root, spec, model });
-  return { ...added, note };
+  return { ...added, note, warns };
 }
 
-function applyRule(draft, { root, spec }, write) {
+class Similar extends WriteError {}
+
+function applyRule(draft, { root, spec }, { write, force }) {
   const heading = spec.conductor?.rules;
   const prompt = spec.conductor?.prompt;
   if (!heading || !prompt)
     return fail("the workflow file has no conductor.rules heading: nowhere to append a rule");
   const line = `- ${oneLine(draft.answer)}`;
+  const warns = [];
+  const edit = (text) => {
+    const at = similarLine(text, { heading, line });
+    if (at !== null) {
+      const where = `${prompt}:${at}`;
+      if (write && !force) throw new Similar(`similar rule already at ${where}`);
+      warns.push(`! similar rule already at ${where}`);
+    }
+    return appendLine(text, { heading, line });
+  };
   try {
-    apply(join(root, prompt), (text) => appendLine(text, { heading, line }), { preview: !write });
+    apply(join(root, prompt), edit, { preview: !write });
   } catch (e) {
+    if (e instanceof Similar) return fail(e.message, `board draft apply ${draft.n} --force --apply`);
     if (e instanceof WriteError) return fail(e.message);
     throw e;
   }
   if (!write)
-    return { exit: 0, out: `would add a rule under "${heading}" (${prompt})\n    + ${line}` };
-  return { exit: 0, out: `rule added under "${heading}" (${prompt})` };
+    return {
+      exit: 0,
+      out: `would add a rule under "${heading}" (${prompt})\n    + ${line}`,
+      warns,
+    };
+  return { exit: 0, out: `rule added under "${heading}" (${prompt})`, warns };
 }
 
 // The checkout `root` is in, when it is not the main one `runRoot` (a linked worktree); else null.
@@ -152,7 +180,7 @@ function number(word) {
   return /^[1-9]\d*$/.test(word ?? "") ? Number(word) : null;
 }
 
-const FLAGS = ["--apply", "--json", "--answer", "--why"];
+const FLAGS = ["--apply", "--json", "--force", "--answer", "--why"];
 
 // `--answer` and `--why` with their text, out of `argv`: `{ words, edits }`, or `{ error }` for a flag with no
 // text after it. An empty text is kept, for the caller to refuse.
@@ -174,7 +202,8 @@ export function run(argv, ctx) {
   if (taken.error) return usage(taken.error);
   const write = taken.words.includes("--apply");
   const json = taken.words.includes("--json");
-  const words = taken.words.filter((a) => a !== "--apply" && a !== "--json");
+  const force = taken.words.includes("--force");
+  const words = taken.words.filter((a) => a !== "--apply" && a !== "--json" && a !== "--force");
   const [action, ...rest] = words;
   const runRoot = mainRoot(ctx.root) ?? ctx.root;
   // `text` as printed, or `data` as JSON with `--json`.
@@ -182,7 +211,8 @@ export function run(argv, ctx) {
     exit: 0,
     out: json ? JSON.stringify(data) : withTorn(text, runRoot),
   });
-  if (write && action !== "apply") return usage("--apply goes with apply <n>");
+  if ((write || force) && action !== "apply")
+    return usage(`${write ? "--apply" : "--force"} goes with apply <n>`);
   if (Object.keys(taken.edits).length && action !== "apply")
     return usage("--answer and --why go with apply <n>");
   const blank = Object.keys(taken.edits).find((k) => !taken.edits[k].trim());
@@ -204,9 +234,11 @@ export function run(argv, ctx) {
     if (at < 0 || rest.length !== 2) return usage("add needs --fields '<draft>'");
     let given;
     try {
-      given = JSON.parse(rest[at + 1]);
+      given = JSON.parse(fieldsText(rest[at + 1]));
     } catch (e) {
-      return fail(`--fields is not valid JSON (${e.message})`);
+      return fail(
+        e instanceof WriteError ? e.message : `--fields is not valid JSON (${e.message})`,
+      );
     }
     const why = drafts.problem(given);
     if (why) return fail(why);
@@ -235,15 +267,20 @@ export function run(argv, ctx) {
     return usage("--why goes with a decision draft");
   const used = { ...draft, ...taken.edits };
   const wrote =
-    draft.kind === "decision" ? applyDecision(used, ctx, write) : applyRule(used, ctx, write);
+    draft.kind === "decision"
+      ? applyDecision(used, ctx, write)
+      : applyRule(used, ctx, { write, force });
   if (wrote.exit !== 0) return wrote;
+  const warns = wrote.warns ?? [];
+  const flagged = warns.length ? { warnings: warns } : {};
   const body = wrote.out.split("\n").filter((l) => l !== PREVIEW);
   const note = wrote.note ? [wrote.note] : [];
   if (!write)
-    return done([`draft ${n}:`, ...body, ...note, PREVIEW].join("\n"), {
+    return done([`draft ${n}:`, ...body, ...note, ...warns, PREVIEW].join("\n"), {
       n,
       applied: false,
       body,
+      ...flagged,
     });
   // An edited text is kept on the draft's line, with the text it replaced.
   const changed = Object.keys(taken.edits).filter((k) => taken.edits[k] !== (draft[k] ?? ""));
@@ -251,9 +288,10 @@ export function run(argv, ctx) {
     ? { ...taken.edits, edited: Object.fromEntries(changed.map((k) => [k, draft[k] ?? ""])) }
     : {};
   drafts.mark(runRoot, n, "applied", edit);
-  return done([`applied draft ${n}: ${body[0]}`, ...note].join("\n"), {
+  return done([`applied draft ${n}: ${body[0]}`, ...note, ...warns].join("\n"), {
     n,
     applied: true,
     body,
+    ...flagged,
   });
 }

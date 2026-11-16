@@ -2,7 +2,7 @@
 // directory, plus `lane.mjs` as a process. (`board.test.mjs` covers the router through `board.mjs`.)
 import assert from "node:assert/strict";
 import { spawnSync } from "node:child_process";
-import { mkdirSync, mkdtempSync, realpathSync, rmSync, writeFileSync } from "node:fs";
+import { mkdirSync, mkdtempSync, readdirSync, realpathSync, rmSync, writeFileSync } from "node:fs";
 import { tmpdir } from "node:os";
 import { dirname, join } from "node:path";
 import { after, before, test } from "node:test";
@@ -130,4 +130,25 @@ test("lane.mjs with no subs yet answers a usage error, exit 2", () => {
   const res = spawnSync("node", [LANE, "anything"], { encoding: "utf8" });
   assert.equal(res.status, 2);
   assert.match(res.stderr, /unknown subcommand "anything"/);
+});
+
+test("a bare sub-less CLI with bareIndex prints the sub index, exit 0, where one without errors", async () => {
+  const bare = await route([], { dir, bareIndex: true });
+  assert.equal(bare.exit, 0);
+  assert.match(bare.out, /^usage: cli <subcommand>/);
+  assert.match(bare.out, /\n {2}echo {8}Echo the argv\.\n/);
+  assert.equal((await route([], { dir })).exit, 2);
+});
+
+test("bare lane.mjs prints its subcommand index and exits 0, writing nothing", () => {
+  const root = mkdtempSync(join(tmpdir(), "router-lane-"));
+  try {
+    const res = spawnSync("node", [LANE, "--root", root], { encoding: "utf8" });
+    assert.equal(res.status, 0);
+    assert.match(res.stdout, /^usage: lane <subcommand>/);
+    assert.match(res.stdout, /\n {2}session +\S/);
+    assert.deepEqual(readdirSync(root), []);
+  } finally {
+    rmSync(root, { recursive: true, force: true });
+  }
 });

@@ -19,7 +19,7 @@ Shell calls use `agentry`, the plugin's `bin/` command; where it is not on PATH,
 7. **Other work.** Multi-file, design-heavy or ambiguous work with no board id goes through `/agentry:go <task>`. One-file, clear, reversible work you do yourself.
 8. **End.** When the owner wraps up, run `/agentry:close`.
 
-Run `agentry board` and `agentry lane`.
+Run `agentry board` and `agentry lane session start`.
 
 ## The repo's conductor prompt
 

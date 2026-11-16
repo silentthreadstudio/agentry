@@ -3,6 +3,7 @@
 // table-board and frontmatter-board (copied to a scratch dir, never edited in place).
 // Run: node --test plugin/scripts/test/write-cli.test.mjs
 import assert from "node:assert/strict";
+import { spawnSync } from "node:child_process";
 import { cpSync, mkdtempSync, readFileSync, rmSync, symlinkSync, writeFileSync } from "node:fs";
 import { tmpdir } from "node:os";
 import { dirname, join } from "node:path";
@@ -443,4 +444,27 @@ test("an old --json '{…}' on add or set exits 2 with a pointer to the new form
   assert.equal(changed.exit, 2);
   assert.match(changed.out, /^✗ board set: --json '\{…\}' is now <field>=<value> \(0\.3\)/);
   assert.equal(text(root, "board/TASKS.md"), before);
+});
+
+test("add --fields @<path> reads the fields from a file; a missing file is refused naming it", () => {
+  const root = copy("write");
+  writeFileSync(join(root, "f.json"), '{"id":"W4","sprint":"A1","note":"Fourth"}');
+  const added = call(add, root, ["task", "--fields", `@${join(root, "f.json")}`, "--apply"]);
+  assert.equal(added.exit, 0, added.out);
+  assert.match(text(root, "board/BOARD.md"), /\| W4 \|/);
+  const missing = call(add, root, ["task", "--fields", `@${join(root, "none.json")}`]);
+  assert.equal(missing.exit, 2);
+  assert.match(missing.out, /cannot read --fields from .*none\.json \(ENOENT\)/);
+});
+
+test("add --fields - reads the fields from stdin", () => {
+  const root = copy("write");
+  const BOARD = join(FIXTURES, "..", "..", "board.mjs");
+  const res = spawnSync(
+    "node",
+    [BOARD, "add", "task", "--fields", "-", "--root", root, "--process", join(root, "process.json")],
+    { input: '{"id":"W4","sprint":"A1","note":"Fourth"}', encoding: "utf8" },
+  );
+  assert.equal(res.status, 0, res.stdout + res.stderr);
+  assert.match(res.stdout, /^would add task W4\n/);
 });

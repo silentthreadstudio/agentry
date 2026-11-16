@@ -1,11 +1,13 @@
 // Tests for `board draft apply` of a decision with no drafts.decision in the workflow file (the map is derived
-// from the decision kind), the draft's `why`, and an answer edited at apply (cli/draft.mjs).
+// from the decision kind), the draft's `why`, an answer edited at apply, an empty why, a rule like one already
+// written, and `add --fields` from a file or stdin (cli/draft.mjs).
 // Run: node --test plugin/scripts/test/draft-cli.test.mjs
 import assert from "node:assert/strict";
+import { spawnSync } from "node:child_process";
 import { readFileSync, writeFileSync } from "node:fs";
 import { join } from "node:path";
 import { after, test } from "node:test";
-import { SPEC, board, boardRepo, read } from "./drift-repo.mjs";
+import { BOARD, SPEC, board, boardRepo, read } from "./drift-repo.mjs";
 
 const cleanups = [];
 after(() => {
@@ -250,4 +252,99 @@ test("applying the same draft twice writes once", () => {
   assert.equal(board(root, "draft", "apply", "1", "--answer", "again", "--apply").status, 2);
   assert.equal(read(root, DECISIONS), once);
   assert.equal(once.split("\n").filter((l) => l.startsWith("| D")).length, 2);
+});
+
+const BARE = { kind: "decision", answer: "Keep the board in markdown", unpicked: ["a wiki"] };
+
+test("a decision whose why fills empty is flagged in the preview and refused on --apply without --why", () => {
+  const { root } = fresh();
+  add(root, BARE);
+  const preview = board(root, "draft", "apply", "1");
+  assert.equal(preview.status, 0);
+  assert.match(preview.stdout, /\n! why is empty\n/);
+  const refused = board(root, "draft", "apply", "1", "--apply");
+  assert.equal(refused.status, 2);
+  assert.match(refused.stderr, /^✗ board draft: why is empty → board draft apply 1 --why/);
+  assert.equal(read(root, DECISIONS), TABLE);
+  const ok = board(root, "draft", "apply", "1", "--why", "It diffs well", "--apply");
+  assert.equal(ok.status, 0, ok.stdout + ok.stderr);
+  assert.match(read(root, DECISIONS), /\| D2 +\| Keep the board in markdown +\| It diffs well +\|/);
+});
+
+test("--json carries the warnings of a preview", () => {
+  const { root } = fresh();
+  add(root, BARE);
+  const out = JSON.parse(board(root, "draft", "apply", "1", "--json").stdout);
+  assert.deepEqual(out.warnings, ["! why is empty"]);
+});
+
+test("an empty rejected column is a note only: the preview says it and apply writes", () => {
+  const { root } = fresh();
+  add(root, { kind: "decision", answer: "No wiki", why: "Too heavy" });
+  const preview = board(root, "draft", "apply", "1");
+  assert.match(preview.stdout, /\n! rejected is empty\n/);
+  assert.doesNotMatch(preview.stdout, /why is empty/);
+  const out = board(root, "draft", "apply", "1", "--apply");
+  assert.equal(out.status, 0, out.stdout + out.stderr);
+  assert.match(out.stdout, /\n! rejected is empty\n$/);
+});
+
+test("a decision with a why and a rejected column carries no warning", () => {
+  const { root } = fresh();
+  add(root, DRAFT);
+  assert.doesNotMatch(board(root, "draft", "apply", "1").stdout, /^!/m);
+});
+
+test("a rule like one already in its section is flagged, refused on --apply and written with --force", () => {
+  const { root } = fresh();
+  add(root, { kind: "rule", answer: "**EXISTING**  rule. (2026-11-16)" });
+  const preview = board(root, "draft", "apply", "1");
+  assert.equal(preview.status, 0);
+  assert.match(preview.stdout, /\n! similar rule already at CONDUCTOR\.md:5\n/);
+  const refused = board(root, "draft", "apply", "1", "--apply");
+  assert.equal(refused.status, 2);
+  assert.match(refused.stderr, /similar rule already at CONDUCTOR\.md:5 → board draft apply 1 --force/);
+  assert.doesNotMatch(read(root, "CONDUCTOR.md"), /2026/);
+  const forced = board(root, "draft", "apply", "1", "--force", "--apply");
+  assert.equal(forced.status, 0, forced.stdout + forced.stderr);
+  assert.match(read(root, "CONDUCTOR.md"), /- Existing rule\.\n- \*\*EXISTING\*\* rule\. \(2026-11-16\)\n/);
+});
+
+test("a rule that is not like any line of its section is written without a flag", () => {
+  const { root } = fresh();
+  add(root, { kind: "rule", answer: "Always run the gate before a merge." });
+  const out = board(root, "draft", "apply", "1", "--apply");
+  assert.equal(out.status, 0);
+  assert.doesNotMatch(out.stdout, /!/);
+});
+
+test("--force goes with apply only", () => {
+  const { root } = fresh();
+  assert.equal(board(root, "draft", "list", "--force").status, 2);
+});
+
+test("draft add --fields @<path> reads the draft from a file", () => {
+  const { root } = fresh();
+  writeFileSync(join(root, "d.json"), JSON.stringify(DRAFT));
+  const out = board(root, "draft", "add", "--fields", `@${join(root, "d.json")}`);
+  assert.equal(out.status, 0, out.stdout + out.stderr);
+  assert.equal(stored(root)[0].answer, DRAFT.answer);
+});
+
+test("draft add --fields - reads the draft from stdin", () => {
+  const { root } = fresh();
+  const out = spawnSync("node", [BOARD, "draft", "add", "--fields", "-", "--root", root], {
+    input: JSON.stringify(DRAFT),
+    encoding: "utf8",
+    env: { ...process.env, NO_COLOR: "1" },
+  });
+  assert.equal(out.status, 0, out.stdout + out.stderr);
+  assert.equal(stored(root)[0].why, "It diffs well");
+});
+
+test("draft add --fields @<missing file> is refused naming it, nothing stored", () => {
+  const { root } = fresh();
+  const out = board(root, "draft", "add", "--fields", `@${join(root, "nope.json")}`);
+  assert.equal(out.status, 2);
+  assert.match(out.stderr, /cannot read --fields from .*nope\.json \(ENOENT\)/);
 });

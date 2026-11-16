@@ -1,4 +1,4 @@
-// board add <kind> --fields '{"id": "…", …}' [--apply] — write a new item at every `create` location of its
+// board add <kind> --fields <json | @path | -> [--apply] — write a new item at every `create` location of its
 // kind: each row (own table, or the parent's file) and each block. The id is passed
 // in (`next-id` proposes it) or, when `create.id` is a pattern and none is given, filled the same way and
 // printed; only `create.id: "ask"` requires it. A duplicate id is refused. All files are edited as one
@@ -9,7 +9,8 @@
 //
 // run(argv, { root, spec, model, today? }) -> { exit, out }   exit 0 = written or previewed, 2 = usage
 // or refusal
-import { join, relative } from "node:path";
+import { readFileSync } from "node:fs";
+import { join, relative, resolve } from "node:path";
 import { PREVIEW, refuse, renamed, usageError } from "../../cli/help.mjs";
 import { recorded } from "../board-writes.mjs";
 import { findContract } from "../contract.mjs";
@@ -23,8 +24,8 @@ export const help = {
   purpose: "Add one item at every create location of its kind, as one write or none.",
   args: { "<kind>": "a kind the process file knows, with a create rule" },
   flags: {
-    "--fields <json>":
-      "the item's fields as one JSON object; id optional when create.id is a pattern",
+    "--fields <json|@path|->":
+      "the item's fields as one JSON object, inline, from a file (@path) or from stdin (-); id optional when create.id is a pattern",
     "--apply": "write it (without: print each place and the lines it would get, write nothing)",
     "--json": "print { kind, id, applied, notes, files: [{ file, added }] } as one JSON object",
   },
@@ -44,6 +45,18 @@ function show(value, def) {
 // A value written into a cell or a block line stays on one line: LF, CR and the Unicode line and
 // paragraph separators would split it.
 const LINE_BREAK = /[\n\r\u2028\u2029]/;
+
+/** The text a `--fields` value names: `@<path>` is that file (read from the working directory), `-` is
+ *  stdin, anything else is the text itself. An unreadable file or stdin is a `WriteError`. */
+export function fieldsText(arg) {
+  if (arg !== "-" && !arg.startsWith("@")) return arg;
+  const from = arg === "-" ? "stdin" : resolve(arg.slice(1));
+  try {
+    return readFileSync(arg === "-" ? 0 : from, "utf8");
+  } catch (error) {
+    throw new WriteError(`cannot read --fields from ${from} (${error.code ?? error.message})`);
+  }
+}
 
 export function run(argv, { root, spec, model, today = isoToday() }) {
   const kindName = argv.find((a) => !a.startsWith("--"));
@@ -66,9 +79,11 @@ export function run(argv, { root, spec, model, today = isoToday() }) {
   if (!create) return fail(`${kindName} has no "create" in the process file`);
   let given;
   try {
-    given = JSON.parse(json);
+    given = JSON.parse(fieldsText(json));
   } catch (error) {
-    return fail(`--fields is not valid JSON (${error.message})`);
+    return fail(
+      error instanceof WriteError ? error.message : `--fields is not valid JSON (${error.message})`,
+    );
   }
   if (given === null || typeof given !== "object" || Array.isArray(given))
     return fail("--fields must be an object");

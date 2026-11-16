@@ -136,6 +136,34 @@ export function appendLine(text, { heading, line }) {
   return insertInSection(text, heading, [line], true);
 }
 
+// A line as a rule is compared: case, `**`, backticks, a date in parentheses and punctuation gone, as a
+// set of words.
+const ruleWords = (line) =>
+  new Set(
+    line
+      .toLowerCase()
+      .replace(/^\s*[-*+]\s+/, "")
+      .replace(/\([^)]*\d{4}-\d{2}-\d{2}[^)]*\)/g, " ")
+      .match(/[\p{L}\p{N}]+/gu) ?? [],
+  );
+
+/** The 1-based line, in the section under `heading`, that matches `line` once case, `**`, dates in
+ *  parentheses, punctuation and whitespace are set aside, or shares at least four fifths of its words
+ *  with it; null when none does (or there is no such section). */
+export function similarLine(text, { heading, line }) {
+  const sec = md.section(text, heading);
+  const want = ruleWords(line);
+  if (!sec || !want.size) return null;
+  const lines = rawLines(text);
+  for (let n = sec.line + 1; n <= sec.end; n++) {
+    const have = ruleWords(lines[n - 1] ?? "");
+    if (!have.size) continue;
+    const shared = [...want].filter((w) => have.has(w)).length;
+    if (shared / (want.size + have.size - shared) >= 0.8) return n;
+  }
+  return null;
+}
+
 // A file to edit: missing, a dangling symlink or a directory is a refusal that names it.
 function readOrRefuse(file) {
   try {
