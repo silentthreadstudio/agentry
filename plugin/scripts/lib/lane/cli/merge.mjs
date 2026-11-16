@@ -48,6 +48,7 @@ import {
   done,
   landNext,
   ok,
+  progress,
   red,
   short,
 } from "../merge/lane.mjs";
@@ -322,7 +323,9 @@ function land(lane) {
   ];
   claim(lane);
   for (const step of steps) {
+    const before = rows.length;
     const stop = step(lane, rows);
+    for (const r of rows.slice(before)) progress(r);
     if (!stop) continue;
     // At a stop, main gets exec's writes back, unless git is mid-pick or they would not go back.
     const back = stop.keepCarry ? null : giveBack(lane);

@@ -24,14 +24,16 @@ export const red = row("red");
 export const skip = row("skip");
 export const wait = row("wait");
 
+const line = (r) => `  ${MARK[r.mark]} ${r.step.padEnd(7)} ${r.detail}`;
+/** A row's first line on stderr, written as its step finishes: the table on stdout comes only at the end
+ *  of the call, and a gate can run for minutes. */
+export const progress = (r) => process.stderr.write(`${line(r)}\n`);
+
 function render(lane, rows, next) {
   const head = lane.ledger
     ? `merge ${lane.id} · ${lane.ledger.branch} → ${lane.ledger.mainBranch}`
     : `merge ${lane.id}`;
-  const body = rows.flatMap((r) => [
-    `  ${MARK[r.mark]} ${r.step.padEnd(7)} ${r.detail}`,
-    ...r.more.map((m) => `            ${m}`),
-  ]);
+  const body = rows.flatMap((r) => [line(r), ...r.more.map((m) => `            ${m}`)]);
   return nextStep([head, ...body, ...(next ? [`next: ${next}`] : [])].join("\n"));
 }
 /** The call's result; a next step it names is kept in the ledger too (`next`), for a cold resume. */

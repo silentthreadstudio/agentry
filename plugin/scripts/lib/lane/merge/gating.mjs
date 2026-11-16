@@ -10,7 +10,7 @@ import { gateArgv } from "../gate-group.mjs";
 import { gateLockDir, holdGate } from "../gate-lock.mjs";
 import { canSkip, changedSince, flakyReds, pickTier, runGate } from "../gate.mjs";
 import { commitOf, rollback, treeOf } from "../land.mjs";
-import { now, ok, red, save, setMerge, short } from "./lane.mjs";
+import { now, ok, progress, red, save, setMerge, short, wait } from "./lane.mjs";
 import { lastWorktreeGate } from "./rows.mjs";
 
 // The `after` glob a post-gate file matched, found with the gate's own matcher, so the table never names a
@@ -66,6 +66,7 @@ export function gateStep(lane, rows) {
     n++;
     while (existsSync(join(dir, `merge-gate-${n}.log`))) n++;
     const logFile = join(dir, `merge-gate-${n}.log`);
+    progress(wait("gate", `log ${logFile}`));
     const held = holdGate(gateLockDir(root), {
       slots: gate.concurrency,
       exclusive,

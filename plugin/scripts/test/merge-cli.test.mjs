@@ -3223,3 +3223,19 @@ test("a land records its process in the ledger from the set-aside on, and --stat
   assert.ok(existsSync(path));
 });
 
+// ---- each land step prints its row on stderr as it finishes ------------------------------------------
+
+test("a land prints each step's row on stderr, and the gate log's path before the gate starts", () => {
+  build({ "src/a.txt": "a\n" });
+  const res = merge(ID, "--branch", BRANCH, "--message", "docs(board): land T1");
+  assert.equal(res.status, 0, out(res));
+  const lines = res.stderr.split("\n");
+  const at = (re) => lines.findIndex((l) => re.test(l));
+  assert.ok(at(/^ {2}✓ land +1 commit\(s\) picked/) >= 0, res.stderr);
+  const log = at(/^ {2}… gate +log .*merge-gate-1\.log$/);
+  assert.ok(log >= 0, res.stderr);
+  assert.ok(log < at(/^ {2}✓ gate +full ran on main/), "the log path comes before the gate's row");
+  assert.ok(at(/^ {2}✓ commit /) > log);
+  assert.match(res.stdout, /✓ commit/, "the table on stdout is unchanged");
+});
+
