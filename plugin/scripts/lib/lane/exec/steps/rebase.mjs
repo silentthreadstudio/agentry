@@ -6,7 +6,7 @@ import { now } from "../../fmt.mjs";
 import { isAncestor } from "../../land.mjs";
 import { expects } from "../../rounds.mjs";
 import { restackLine, stackOf } from "../../stack.mjs";
-import { nestedTrees, refuseAtWriterCap } from "../admission.mjs";
+import { nestedTrees, refuseAtWriterCap, refuseDuringLand } from "../admission.mjs";
 import { buildTier, dispatchNext } from "../briefs.mjs";
 import { headOf } from "../guard/snapshot.mjs";
 import { mustLedger, refuse, stepWith } from "../lane.mjs";
@@ -20,6 +20,7 @@ import { view } from "../view.mjs";
 // main past `closedTip` is recorded as rebased, with no builder round.
 export function run(ctx, id) {
   const { root, spec } = ctx;
+  refuseDuringLand(root);
   const ledger = mustLedger(root, id);
   const out = ledger.rounds.at(-1);
   if (out?.step === "rebase" && expects(ledger) === "report")
