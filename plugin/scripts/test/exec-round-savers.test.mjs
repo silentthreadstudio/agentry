@@ -182,6 +182,39 @@ test("fact is accepted on a build round, and a fresh resume brief carries the fa
   assert.notEqual(resumed.json.brief, out.brief);
 });
 
+test("a fix round after PASS WITH NOTES carries the facts", () => {
+  const r = repo();
+  const out = lane(r, ["start", "F1"]).json;
+  lane(r, ["fact", "F1", "--text", "keep two spaces"]);
+  build(out, "one.txt");
+  const verify = lane(r, ["report", "F1"]).json;
+  writeFileSync(verify.reportPath, "ok\nN1 nit\nused_memories: none\nVerdict: PASS WITH NOTES\n");
+  assert.equal(lane(r, ["verdict", "F1"]).exit, 0);
+  const fix = lane(r, ["fix", "F1", "--notes", "N1"]);
+  assert.equal(fix.exit, 0, fix.stderr);
+  assert.match(readFileSync(fix.json.brief, "utf8"), /\n## Facts\n[\s\S]*- keep two spaces\n$/);
+});
+
+test("restart, plain and with --carry, carries the facts into the first brief", () => {
+  for (const carry of [false, true]) {
+    const r = repo();
+    const out = lane(r, ["start", "F1"]).json;
+    build(out, "one.txt");
+    lane(r, ["fact", "F1", "--text", "RESTART-FACT"]);
+    assert.equal(lane(r, ["hold", "F1", "--for", "later"]).exit, 0);
+    const restarted = lane(r, ["restart", "F1", ...(carry ? ["--carry"] : [])]);
+    assert.equal(restarted.exit, 0, restarted.stderr);
+    assert.match(
+      readFileSync(restarted.json.brief, "utf8"),
+      /\n## Facts\n[\s\S]*- RESTART-FACT\n$/,
+    );
+    assert.deepEqual(
+      ledgerOf(r.root, "F1").facts.map((f) => f.text),
+      ["RESTART-FACT"],
+    );
+  }
+});
+
 test("fact --clear empties the list and drops the section", () => {
   const r = repo();
   const asked = askedLane(r);

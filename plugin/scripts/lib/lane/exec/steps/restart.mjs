@@ -254,7 +254,12 @@ export function run(ctx, id) {
   try {
     ({ kept, tip: keptTip } = retire(root, old, n));
     // The owner's calls are the lane's, not the attempt's: the new ledger keeps them.
-    const withCalls = (path, base) => ({ calls: old.calls ?? [], ...again(path, base) });
+    // So are the facts kept for its builders: the first brief lists them.
+    const withCalls = (path, base) => ({
+      calls: old.calls ?? [],
+      facts: old.facts ?? [],
+      ...again(path, base),
+    });
     const res = openLane({ ...ctx, on: null, cite: old.cite ?? [] }, id, {
       found,
       mainBranch,
