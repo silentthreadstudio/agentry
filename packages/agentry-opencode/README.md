@@ -52,7 +52,7 @@ Recommended for one person across all repos. Run these in this order:
 
 ```
 npm install -g agentry-opencode
-opencode plugin add agentry-opencode@0.5.0
+opencode plugin add agentry-opencode@0.5.1
 opencode service restart
 agentry init --host opencode --global --apply
 ```
@@ -67,12 +67,12 @@ never removes your own files there; `--global` with `--vendor` is refused.
 Pins the version in the repo and can be shared by committing `.opencode/`:
 
 ```
-opencode plugin add agentry-opencode@0.5.0
+opencode plugin add agentry-opencode@0.5.1
 opencode service restart
-npx agentry-opencode@0.5.0 init --host opencode --vendor --apply
+npx agentry-opencode@0.5.1 init --host opencode --vendor --apply
 ```
 
-Then run `/agentry/init` in OpenCode, and run the same `npx agentry-opencode@0.5.0 init --host opencode --vendor --apply`
+Then run `/agentry/init` in OpenCode, and run the same `npx agentry-opencode@0.5.1 init --host opencode --vendor --apply`
 again to add the `AGENTS.md` block. `--vendor` copies the CLI into the repo's `.agentry/`, so nothing global is
 needed.
 
@@ -100,7 +100,7 @@ already in sync.
 
 ### Check it worked
 
-- `agentry --version` prints `0.5.0`.
+- `agentry --version` prints `0.5.1`.
 - `opencode debug agents` lists `agentry/conductor` and the 8 specialists.
 - In OpenCode, typing `/agentry` shows the commands. Commands are namespaced: `/agentry/init`, not `/agentry:init`.
 

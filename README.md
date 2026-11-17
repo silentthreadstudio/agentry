@@ -8,7 +8,7 @@
 </p>
 
 <p align="center">
-  <code>0.5.0 · pre-1.0</code> &nbsp;·&nbsp; <code>Node ≥ 24</code> &nbsp;·&nbsp; <code>MIT</code>
+  <code>0.5.1 · pre-1.0</code> &nbsp;·&nbsp; <code>Node ≥ 24</code> &nbsp;·&nbsp; <code>MIT</code>
 </p>
 
 ---
@@ -58,14 +58,14 @@ Plain Node, no dependencies, nothing to build.
 Requires Claude Code and Node 24 or newer. From a Claude Code session:
 
 ```
-/plugin marketplace add silentthreadstudio/agentry#v0.5.0
+/plugin marketplace add silentthreadstudio/agentry#v0.5.1
 /plugin install agentry@agentry-dev
 ```
 
 Restart the session. Agents, commands and skills load at startup, and the plugin puts `agentry` on the
 Bash tool's PATH.
 
-`#v0.5.0` pins the install to the 0.5.0 release; `main` moves with development. To move to a later release,
+`#v0.5.1` pins the install to the 0.5.1 release; `main` moves with development. To move to a later release,
 remove the marketplace and add it again with the new tag. Each release is also on
 [GitHub Releases](https://github.com/silentthreadstudio/agentry/releases) as a zip.
 
@@ -114,7 +114,7 @@ Recommended for one person across all repos. Run these in this order:
 
 ```
 npm install -g agentry-opencode
-opencode plugin add agentry-opencode@0.5.0
+opencode plugin add agentry-opencode@0.5.1
 opencode service restart
 agentry init --host opencode --global --apply
 ```
@@ -129,12 +129,12 @@ never removes your own files there; `--global` with `--vendor` is refused.
 Pins the version in the repo and can be shared by committing `.opencode/`:
 
 ```
-opencode plugin add agentry-opencode@0.5.0
+opencode plugin add agentry-opencode@0.5.1
 opencode service restart
-npx agentry-opencode@0.5.0 init --host opencode --vendor --apply
+npx agentry-opencode@0.5.1 init --host opencode --vendor --apply
 ```
 
-Then run `/agentry/init` in OpenCode, and run the same `npx agentry-opencode@0.5.0 init --host opencode --vendor --apply`
+Then run `/agentry/init` in OpenCode, and run the same `npx agentry-opencode@0.5.1 init --host opencode --vendor --apply`
 again to add the `AGENTS.md` block. `--vendor` copies the CLI into the repo's `.agentry/`, so nothing global is
 needed.
 
@@ -162,7 +162,7 @@ already in sync.
 
 #### Check it worked
 
-- `agentry --version` prints `0.5.0`.
+- `agentry --version` prints `0.5.1`.
 - `opencode debug agents` lists `agentry/conductor` and the 8 specialists.
 - In OpenCode, typing `/agentry` shows the commands. Commands are namespaced: `/agentry/init`, not `/agentry:init`.
 
@@ -294,7 +294,7 @@ pnpm --filter @agentry/eval selfeval report <run-id>    # a self-contained HTML 
 
 ## Status
 
-Pre-1.0. The current release is `0.5.0`. Commands and flags can still change between releases, and
+Pre-1.0. The current release is `0.5.1`. Commands and flags can still change between releases, and
 [`CHANGELOG.md`](./CHANGELOG.md) records each change. Claude Code and OpenCode are both supported hosts in 0.4.0.
 
 ## Docs

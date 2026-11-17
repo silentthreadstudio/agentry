@@ -6,6 +6,43 @@ scheme is pragmatic: patch releases carry fixes, docs, and small additions.
 
 ## [Unreleased]
 
+## [0.5.1] — 2026-11-17
+
+Fixes found in field use. Facts given to a builder now reach every later builder brief, `board add` and
+`board set` can commit their own change, and refusals from the `lane exec` steps end with the command to run.
+
+### Upgrade notes
+
+- The builder brief section for a supplied fact is now `## Facts` (it was `## The fact`), and lists every fact
+  kept for the lane. A script or note that looks for the old heading needs the new one.
+
+### Added
+
+- `board add` and `board set` take `--commit` after `--apply` (`--apply --commit ["<message>"]`). It commits
+  exactly that command's change, replayed on HEAD's text, so uncommitted lines of a running lane stay in the
+  working tree; the preview names what it would commit. It refuses when a target file is already staged or
+  untracked, when the change needs lines that are not committed yet, when git has a merge, cherry-pick, revert
+  or rebase in progress, and when a running lane owns a target file (use plain `--apply`). If a hook rejects
+  the commit, the rows stay written, the index goes back to HEAD, and the command exits 2 and says so. A
+  pre-commit hook that re-stages files (`git add -u`, lint-staged) can pull a lane's uncommitted cells into the
+  commit.
+- `lane exec fact <id> --text "<fact>"` works on any builder round waiting for its report, not only a
+  needs-context one. Each fact is kept in the ledger (the same text twice is kept once), and `lane exec fact
+  <id> --clear` empties the list.
+
+### Changed
+
+- Every builder brief after a fact is given lists the facts under `## Facts`: the resume, the `--fresh` brief,
+  a fix round and a restart (plain or `--carry`) all carry them. The owner's answer to a context hold
+  (`resume --note`) joins the same list instead of a section of its own.
+- `lane exec` refusals from `verdict`, `close`, `--leave` and the other steps end with `→ <the command to run
+  now>`.
+
+### Fixed
+
+- A contract flag written as "not ⚑" or "no ⚑" no longer makes `lane exec start` warn that the item's flag is
+  empty.
+
 ## [0.5.0] — 2026-11-16
 
 Fixes found in field use. `lane exec` steps stop costing rounds (facts, report intake and
@@ -933,7 +970,8 @@ without the fix.
   - **Self-eval harness** — measures the system's own routing and decision
     quality instead of asserting it works.
 
-[Unreleased]: https://github.com/silentthreadstudio/agentry/compare/v0.5.0...HEAD
+[Unreleased]: https://github.com/silentthreadstudio/agentry/compare/v0.5.1...HEAD
+[0.5.1]: https://github.com/silentthreadstudio/agentry/compare/v0.5.0...v0.5.1
 [0.5.0]: https://github.com/silentthreadstudio/agentry/compare/v0.4.2...v0.5.0
 [0.4.2]: https://github.com/silentthreadstudio/agentry/compare/v0.4.1...v0.4.2
 [0.4.1]: https://github.com/silentthreadstudio/agentry/compare/v0.4.0...v0.4.1

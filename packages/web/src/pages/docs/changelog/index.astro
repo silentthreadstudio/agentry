@@ -1,6 +1,6 @@
 ---
 // /docs/changelog — hand-authored (NOT auto-generated; CHANGELOG.md in the repo is the full record).
-// Releases 0.5.0, 0.4.2, 0.4.1, 0.4.0 and 0.3.0, v0.2, and the v0.1 → v0.1.2 line. Truthful to what ships — no
+// Releases 0.5.1, 0.5.0, 0.4.2, 0.4.1, 0.4.0 and 0.3.0, v0.2, and the v0.1 → v0.1.2 line. Truthful to what ships — no
 // invented features.
 //
 // Base-path rule (#1 404 trap): every internal href goes through withBase().
@@ -11,11 +11,19 @@ import { withBase } from "../../../lib/base.ts";
 <DocsLayout
   current="changelog"
   title="Changelog"
-  description="What changed in Agentry, by release: 0.5.0, 0.4.2, 0.4.1, 0.4.0 (OpenCode), 0.3.0 (lanes, agentry mem), v0.2 with the docs site, back to the initial v0.1 line."
+  description="What changed in Agentry, by release: 0.5.1, 0.5.0, 0.4.2, 0.4.1, 0.4.0 (OpenCode), 0.3.0 (lanes, agentry mem), v0.2 with the docs site, back to the initial v0.1 line."
   eyebrow="Reference · Changelog"
   lede="A hand-authored record of what changed, newest first. It tracks releases, not commits, so it leans toward what changed for you. The repo's CHANGELOG.md has every entry."
 >
   <div class="prose">
+    <h2 class="prose__h">0.5.1 — 2026-11-17</h2>
+    <p>
+      Fixes found in field use. <code>board add</code> and <code>board set</code> take <code>--commit</code> to commit
+      only their own change. A fact given with <code>lane exec fact</code> now reaches every later builder brief,
+      under <code>## Facts</code> (it was <code>## The fact</code>), through resume, fix and restart. Refusals from
+      the <code>lane exec</code> steps end with the command to run.
+    </p>
+
     <h2 class="prose__h">0.5.0 — 2026-11-16</h2>
     <p>
       Fixes found in field use. <code>lane exec</code> steps stop costing rounds, the board,
