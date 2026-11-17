@@ -4,7 +4,15 @@
 // Run: node --test plugin/scripts/test/commit-edits.test.mjs
 import assert from "node:assert/strict";
 import { spawnSync } from "node:child_process";
-import { chmodSync, cpSync, mkdtempSync, readFileSync, rmSync, writeFileSync } from "node:fs";
+import {
+  chmodSync,
+  cpSync,
+  mkdirSync,
+  mkdtempSync,
+  readFileSync,
+  rmSync,
+  writeFileSync,
+} from "node:fs";
 import { tmpdir } from "node:os";
 import { dirname, join } from "node:path";
 import { after, test } from "node:test";
@@ -201,4 +209,93 @@ test("a failing hook puts the index back, keeps the working-tree write and exits
   assert.equal(head(root), before);
   assert.equal(git(root, "diff", "--cached", "--name-only"), "");
   assert.match(text(root, "board/BOARD.md"), /\| W4 \| A1/);
+});
+
+// A side commit, as a cherry-pick source whose change main already has: the pick stops with an empty change.
+function sideCommit(root, file) {
+  git(root, "checkout", "-q", "-b", "side");
+  writeFileSync(join(root, file), "x\n");
+  git(root, "add", file);
+  git(root, "commit", "-q", "-m", "side");
+  const sha = head(root);
+  git(root, "checkout", "-q", "-");
+  return sha;
+}
+
+test("refuses while a cherry-pick waits for its commit (clean index), writing nothing", () => {
+  const root = repo();
+  const side = sideCommit(root, "x.txt");
+  writeFileSync(join(root, "x.txt"), "x\n");
+  git(root, "add", "x.txt");
+  git(root, "commit", "-q", "-m", "main has x too");
+  spawnSync("git", ["-C", root, "cherry-pick", side]); // stops: empty
+  assert.equal(git(root, "diff", "--cached", "--name-only"), "");
+  const before = [head(root), text(root, "board/BOARD.md")];
+  const res = addW4(root, "--commit");
+  assert.equal(res.exit, 2);
+  assert.match(res.out, /git has CHERRY_PICK_HEAD in progress/);
+  assert.deepEqual([head(root), text(root, "board/BOARD.md")], before);
+});
+
+test("refuses while a merge waits for its commit (clean index), writing nothing", () => {
+  const root = repo();
+  const side = sideCommit(root, "y.txt");
+  writeFileSync(join(root, "z.txt"), "z\n"); // main moves on, so side is not an ancestor
+  git(root, "add", "z.txt");
+  git(root, "commit", "-q", "-m", "main moves");
+  git(root, "cherry-pick", side);
+  git(root, "merge", "-q", "-s", "ours", "--no-commit", "--no-ff", "side");
+  assert.equal(git(root, "diff", "--cached", "--name-only"), "");
+  const before = [head(root), text(root, "board/BOARD.md")];
+  const res = call(set, root, ["task", "W3", "note=Changed", "--apply", "--commit"]);
+  assert.equal(res.exit, 2);
+  assert.match(res.out, /git has MERGE_HEAD in progress/);
+  assert.deepEqual([head(root), text(root, "board/BOARD.md")], before);
+});
+
+test("refuses while a rebase is in progress, writing nothing", () => {
+  const root = repo();
+  mkdirSync(join(root, ".git", "rebase-merge"));
+  const before = text(root, "board/BOARD.md");
+  const res = addW4(root, "--commit");
+  assert.equal(res.exit, 2);
+  assert.match(res.out, /git has rebase-merge in progress/);
+  assert.equal(text(root, "board/BOARD.md"), before);
+});
+
+// A running lane's ledger, as the lane CLI keeps it, owning `owned`.
+function laneLedger(root, owned, state = "building") {
+  const dir = join(root, ".agentry", "run", "process", "ledger");
+  mkdirSync(dir, { recursive: true });
+  writeFileSync(
+    join(dir, "T1.json"),
+    JSON.stringify({ v: 1, id: "T1", state, worktree: "/gone", owned }),
+  );
+}
+
+test("refuses --commit when a running lane owns a target file; plain --apply still writes", () => {
+  const root = repo();
+  laneLedger(root, ["board/BOARD.md"]);
+  const before = text(root, "board/BOARD.md");
+  const res = addW4(root, "--commit");
+  assert.equal(res.exit, 2);
+  assert.match(res.out, /lane T1 is running and owns board\/BOARD\.md/);
+  assert.match(res.out, /plain --apply/);
+  assert.equal(text(root, "board/BOARD.md"), before);
+  assert.equal(addW4(root).exit, 0);
+});
+
+test("a merged lane's owned files do not stop --commit", () => {
+  const root = repo();
+  laneLedger(root, ["board/BOARD.md"], "merged");
+  assert.equal(addW4(root, "--commit").exit, 0);
+});
+
+test("when git cannot put the index back, the error says so instead of claiming it", () => {
+  const root = repo();
+  writeFileSync(join(root, ".git", "index.lock"), "");
+  const res = addW4(root, "--commit");
+  assert.equal(res.exit, 2);
+  assert.match(res.out, /the index could not be put back/);
+  assert.doesNotMatch(res.out, /the index is back at HEAD/);
 });

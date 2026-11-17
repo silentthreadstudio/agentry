@@ -44,7 +44,7 @@ until `--apply` (`agentry lane exec` and `agentry lane merge` steps excepted: wr
 `docs(board): add <kind> <id>` / `docs(board): set <kind> <id> <field>`), leaving every other uncommitted line
 of the same files, such as a running lane's `doing` cell, uncommitted in the working tree. It refuses, writing
 nothing, when something is already staged, a file is not tracked, or the edit needs lines not committed yet;
-when a hook fails the commit, the index is put back and the working-tree write stays. Only on the owner's ask.
+when a hook fails the commit, the index is put back and the working-tree write stays. It also refuses while git has a merge, cherry-pick, revert or rebase in progress, and while a running lane owns a target file (use plain `--apply` then). A pre-commit hook that re-stages files (`git add -u`, lint-staged) can pull uncommitted lane cells into the commit. Only on the owner's ask.
 
 Pass user text to `--fields` as one single-quoted argument, with each `'` written as `'\''`. Show the
 script's output as printed; don't re-derive what it already computed.

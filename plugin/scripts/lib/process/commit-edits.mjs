@@ -9,9 +9,11 @@
 // takeCommit(argv) -> { argv, commit, message }   `--commit ["<message>"]` taken out of argv
 // planCommit(root, edits) -> plan                 throws WriteError (a refusal, nothing written)
 // commitPlan(plan, message) -> sha                throws WriteError (commit failed, index restored)
-import { realpathSync } from "node:fs";
-import { relative } from "node:path";
+import { existsSync, realpathSync } from "node:fs";
+import { posix, relative, resolve } from "node:path";
 import { runGit } from "./git.mjs";
+import { globMatch } from "./glob.mjs";
+import { list } from "./ledger.mjs";
 import { WriteError, applyAll } from "./write.mjs";
 
 /** `--commit` and the message that may follow it (a next word that is not a flag) taken out of `argv`:
@@ -27,6 +29,43 @@ export function takeCommit(argv) {
     commit: true,
     message: named ? next : null,
   };
+}
+
+// Git's operations that a commit would finish: a merge, cherry-pick or revert waiting for its commit
+// (a clean index does not rule them out), a rebase or `am` in progress. The first one found, by name.
+const REFS = ["MERGE_HEAD", "CHERRY_PICK_HEAD", "REVERT_HEAD"];
+const DIRS = ["rebase-merge", "rebase-apply"];
+function operationInProgress(top) {
+  for (const ref of REFS)
+    if (runGit(top, ["rev-parse", "-q", "--verify", ref]).status === 0) return ref;
+  for (const dir of DIRS) {
+    const at = runGit(top, ["rev-parse", "--git-path", dir]);
+    if (at.status === 0 && existsSync(resolve(top, at.stdout.trim()))) return dir;
+  }
+  return null;
+}
+
+// Does an owned-files entry (a path, a directory, a glob, a bare file name, `path:lines`) cover `path`?
+const owns = (entry, path) => {
+  const e = entry
+    .toLowerCase()
+    .replace(/:[\d\s,–-]+$/, "")
+    .replace(/^(?:\.\/)+/, "")
+    .replace(/\/+$/, "");
+  const p = path.toLowerCase();
+  if (p === e || p.startsWith(`${e}/`) || globMatch([e], p)) return true;
+  return !e.includes("/") && posix.basename(p) === e;
+};
+
+// The id of a running lane (not merged, cut or closed) whose owned files cover `path`, else null.
+function laneOwning(root, path) {
+  const running = list(root, { sweep: false }).filter(
+    (l) => !["merged", "cut", "closed"].includes(l.state),
+  );
+  const hit = running.find((l) =>
+    (l.owned ?? []).some((o) => owns(typeof o === "string" ? o : (o?.path ?? ""), path)),
+  );
+  return hit?.id ?? null;
 }
 
 const lines = (text) => text.split("\n").filter(Boolean);
@@ -47,6 +86,11 @@ export function planCommit(root, edits) {
     throw new WriteError(
       `${lines(staged.stdout).join(", ")} is already staged; commit or unstage it first, or drop --commit`,
     );
+  const busy = operationInProgress(topDir);
+  if (busy)
+    throw new WriteError(
+      `git has ${busy} in progress; finish or abort it first, or drop --commit (a commit would end it)`,
+    );
   applyAll(edits, { preview: true }); // an edit that fails on the working text refuses as itself
   const byFile = new Map();
   for (const { file, edit } of edits) byFile.set(file, [...(byFile.get(file) ?? []), edit]);
@@ -54,6 +98,11 @@ export function planCommit(root, edits) {
   for (const [file, steps] of byFile) {
     const path = relative(topDir, realpathSync(file)).split("\\").join("/");
     if (path.startsWith("..")) throw new WriteError(`${file} is outside the git repository`);
+    const lane = laneOwning(root, path);
+    if (lane)
+      throw new WriteError(
+        `lane ${lane} is running and owns ${path}: a commit on main would stop it; use plain --apply (its write is let through) and leave the commit to the land`,
+      );
     const entry = runGit(topDir, ["ls-tree", "HEAD", "--", path]).stdout.trim();
     const [mode, type] = entry.split(/\s/);
     if (type !== "blob" || mode === "120000")
@@ -85,10 +134,12 @@ export function planCommit(root, edits) {
 export function commitPlan({ top, files }, message) {
   const paths = files.map((f) => f.path);
   const undo = (why) => {
-    runGit(top, ["reset", "-q", "HEAD", "--", ...paths]);
-    return new WriteError(
-      `the working tree is written, but the commit failed (${why}); the index is back at HEAD for ${paths.join(", ")}`,
-    );
+    const reset = runGit(top, ["reset", "-q", "HEAD", "--", ...paths]);
+    const index =
+      reset.status === 0
+        ? `the index is back at HEAD for ${paths.join(", ")}`
+        : `the index could not be put back (${reset.stderr.trim()}): run git reset -q HEAD -- ${paths.join(" ")}`;
+    return new WriteError(`the working tree is written, but the commit failed (${why}); ${index}`);
   };
   for (const { path, mode, text } of files) {
     const blob = runGit(top, ["hash-object", "-w", "--stdin"], text);
