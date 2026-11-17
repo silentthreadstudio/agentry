@@ -135,22 +135,26 @@ export function run(ctx, id) {
     subjects: subjectsOf(root, ctx.spec, start, ledger.branch),
   };
   const flagged = isFlagged(ctx, ledger);
-  const res = stepWith(before, {
-    type: "report",
-    status: builderStatus(text),
-    blocked: externalBlock(text),
-    report: round.reportPath,
-    agent,
-    summary: summaryOf(text),
-    guards,
-    skipVerify: skipsVerifier(ledger.route, flagged),
-    tip,
-    gate: gateOf(ctx.spec) !== null,
-    tier: buildTier(ctx, before),
-    ...(isRebase && { changed }),
-    saved,
-    at: now(),
-  });
+  const res = stepWith(
+    before,
+    {
+      type: "report",
+      status: builderStatus(text),
+      blocked: externalBlock(text),
+      report: round.reportPath,
+      agent,
+      summary: summaryOf(text),
+      guards,
+      skipVerify: skipsVerifier(ledger.route, flagged),
+      tip,
+      gate: gateOf(ctx.spec) !== null,
+      tier: buildTier(ctx, before),
+      ...(isRebase && { changed }),
+      saved,
+      at: now(),
+    },
+    root,
+  );
   let next = res.ledger;
   if (next.hold?.for === "guard" && !parked) writeFileSync(saved, text);
   if (ledger.route) next.route = { ...ledger.route, flagged };

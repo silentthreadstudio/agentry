@@ -15,8 +15,9 @@
 //   fix <id> --owner "<text>" a verified lane the owner sends back: a builder round on the change, then the
 //                             lane's route (the gate where the route skipped the verifier, else a recheck);
 //                             a lane whose verifier has saved no report yet: that round is voided first
-//   fact <id> --text "<fact>" a needs-context round waiting for its builder: the fact written at the end of
-//                             its brief under `## The fact` (a second call replaces it)
+//   fact <id> --text "<fact>" a round waiting for its builder's report: the fact kept in the ledger and
+//                             listed under `## Facts` at the end of this and every later builder brief;
+//                             `--clear` empties the list and drops the section
 //   rebase <id>               a verified lane whose branch no longer lands: its builder rebases it onto main,
 //                             then a verifier reads the resolution (`exec.rebase: "recheck"`) or the gate
 //   reverify <id>             a lane closed with no verifier (the route skipped it): one fresh verifier
@@ -105,7 +106,7 @@ const HANDLERS = {
 };
 const STEPS = Object.keys(HANDLERS);
 export const help = {
-  usage: `exec <${STEPS.join("|")}> <id> [--agent <agent id>] [--leave <N2,N9>] [--by <owner|conductor>] [--episode <episode id>] [--lesson <text>] [--used-memories <ids>] [--notes <N1,N3>] [--owner <text>] [--text <fact>] [--from <file|->] [--cite <A40,A41>] [--set <paths>] [--add <paths>] [--apply] [--for <owner|later>] [--evidence <path>] [--note <text>] [--redo] [--fresh] [--same] [--on <id>] [--main] [--carry] [--branch <b>] [--decision <D>] [--keep <paths>] [--message <subject>] [--json]`,
+  usage: `exec <${STEPS.join("|")}> <id> [--agent <agent id>] [--leave <N2,N9>] [--by <owner|conductor>] [--episode <episode id>] [--lesson <text>] [--used-memories <ids>] [--notes <N1,N3>] [--owner <text>] [--text <fact>] [--clear] [--from <file|->] [--cite <A40,A41>] [--set <paths>] [--add <paths>] [--apply] [--for <owner|later>] [--evidence <path>] [--note <text>] [--redo] [--fresh] [--same] [--on <id>] [--main] [--carry] [--branch <b>] [--decision <D>] [--keep <paths>] [--message <subject>] [--json]`,
   purpose: "Step one task's build lane: worktree, briefs, rounds, gate, episode. Prints text.",
   args: {
     start: "cut agentry/<id> in a worktree, write dispatched, brief the builder",
@@ -113,7 +114,7 @@ export const help = {
     verdict: "read the verifier's report, write the verdict, brief the next round",
     gate: "run the repo's gate in the worktree and record it",
     fix: "after PASS WITH NOTES: a builder round on the named notes, then a recheck; or the owner's change (--owner)",
-    fact: "a builder's needs-context round: write the fact it asked for into its brief (--text)",
+    fact: "a builder round waiting for its report: keep a fact for every builder brief of the lane (--text, or --clear)",
     close:
       "write the lane's episode to the memory store and stamp its id (--lesson: the one thing worth remembering)",
     show: "the ledger and the pending step, for a cold resume",
@@ -145,7 +146,8 @@ export const help = {
       "close: comma-separated memory ids the run used, added to the ones its reports cited",
     "--notes <N1,N3>": "fix: the verifier's notes to fix, by their labels",
     "--owner <text>": "fix: the owner's change to a verified lane, for one builder round",
-    "--text <fact>": "fact: the fact the builder asked for, put under ## The fact in its brief",
+    "--text <fact>": "fact: a fact for the builder, kept and listed under ## Facts in its briefs",
+    "--clear": "fact: empty the kept facts and drop the section from the brief",
     "--from <file|->":
       "report and verdict: save this file (- for stdin) as the round's report first; refused when a different one is saved",
     "--cite <A40,A41>":
@@ -192,6 +194,7 @@ const STEPS_OF = {
   "--notes": ["fix"],
   "--owner": ["fix"],
   "--text": ["fact"],
+  "--clear": ["fact"],
   "--from": ["report", "verdict"],
   "--cite": ["start"],
   "--set": ["owns"],
@@ -212,7 +215,7 @@ const STEPS_OF = {
   "--message": ["cut"],
 };
 
-// argv → { step, id, value, set, leave, by, add, cite, apply, json, holdFor, evidence, note, owner, text, from, redo, fresh, same, on, toMain,
+// argv → { step, id, value, set, leave, by, add, cite, apply, json, holdFor, evidence, note, owner, text, clear, from, redo, fresh, same, on, toMain,
 // carry, branch, decision, keep, message, lesson, usedMemories } or { error }.
 // `value` is the --agent / --episode / --notes value.
 function parse(argv) {
@@ -240,8 +243,10 @@ function parse(argv) {
       return { error: flag === "--on" ? "--on goes with start only" : `${step} takes no ${flag}` };
   if (step === "fix" && (given["--notes"] === undefined) === (given["--owner"] === undefined))
     return { error: 'fix needs --notes N1,N3 or --owner "<the change>", one of them' };
-  if (step === "fact" && !given["--text"]?.trim())
-    return { error: 'fact needs --text "<the fact>": what the builder asked for' };
+  if (step === "fact" && given["--clear"] && given["--text"] !== undefined)
+    return { error: "fact takes --text or --clear, not both" };
+  if (step === "fact" && !given["--clear"] && !given["--text"]?.trim())
+    return { error: 'fact needs --text "<the fact>" (or --clear): what the builder needs' };
   if (step === "adopt" && given["--branch"] === undefined)
     return { error: "adopt needs --branch <b>: the branch built outside exec" };
   if (step === "restart" && given["--note"] !== undefined && !given["--carry"])
@@ -297,6 +302,7 @@ function parse(argv) {
     note: given["--note"] ?? null,
     owner: given["--owner"] ?? null,
     text: given["--text"]?.trim() ?? null,
+    clear: Boolean(given["--clear"]),
     from: given["--from"] ?? null,
     redo: Boolean(given["--redo"]),
     fresh: Boolean(given["--fresh"]),

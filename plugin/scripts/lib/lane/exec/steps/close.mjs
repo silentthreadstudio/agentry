@@ -6,7 +6,7 @@ import { episodeStored, recordEpisode } from "../../../memory/episodes.mjs";
 import * as ledgers from "../../../process/ledger.mjs";
 import { refuseDuringLand } from "../admission.mjs";
 import { episodeOf } from "../episode.mjs";
-import { laneLine, mustLedger, refuse, stop } from "../lane.mjs";
+import { laneLine, mustLedger, refuse, stop, thenRun } from "../lane.mjs";
 import { view } from "../view.mjs";
 
 const DEPRECATED =
@@ -63,7 +63,10 @@ export function run(ctx, id) {
     ledger.state === "merged" ||
     ledger.cut ||
     ledger.episode;
-  if (!closable) refuse(`the lane is not done (state ${ledger.state}, next ${ledger.next})`);
+  if (!closable)
+    refuse(
+      `the lane is not done (state ${ledger.state}, next ${ledger.next})${thenRun(root, ledger)}`,
+    );
   const payload = episodeOf(ledger, { lesson, usedMemories });
   let written;
   try {

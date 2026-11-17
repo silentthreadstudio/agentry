@@ -138,7 +138,7 @@ function gateOnce(ctx, id) {
       : []),
   ];
   let res = { ledger };
-  for (const record of records) res = stepWith(res.ledger, { type: "gate", record });
+  for (const record of records) res = stepWith(res.ledger, { type: "gate", record }, root);
   ledger = res.ledger;
   ledgers.write(root, ledger);
   // Any run, green or red, changes what the waiting verifier's brief says about the gate.

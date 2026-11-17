@@ -66,14 +66,18 @@ export function run(ctx, id) {
   let res;
   if (moved) {
     const changed = finishRebase(root, next, tip);
-    res = stepWith(next, {
-      type: "rebased",
-      tip,
-      changed,
-      gate: gateOf(spec) !== null,
-      tier: buildTier(ctx, next),
-    });
-  } else res = stepWith(next, { type: "rebase" });
+    res = stepWith(
+      next,
+      {
+        type: "rebased",
+        tip,
+        changed,
+        gate: gateOf(spec) !== null,
+        tier: buildTier(ctx, next),
+      },
+      root,
+    );
+  } else res = stepWith(next, { type: "rebase" }, root);
   next = dispatchNext(ctx, res.ledger, res.dispatch);
   next.nested = nestedTrees(root, next);
   ledgers.write(root, next);

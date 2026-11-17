@@ -42,17 +42,21 @@ export function run(ctx, id) {
     ledger.hold?.report ??
     ledger.hold?.evidence ??
     (ledger.rounds[(ledger.hold?.round ?? 0) - 1] ?? ledger.rounds.at(-1))?.reportPath;
-  const res = stepWith(ledger, {
-    type: "resume",
-    note,
-    redo,
-    same,
-    at: now(),
-    skipVerify: skipsVerifier(ledger.route, flagged),
-    tip: headOf(root, ledger.branch),
-    gate: gateOf(spec) !== null,
-    tier: buildTier(ctx, ledger),
-  });
+  const res = stepWith(
+    ledger,
+    {
+      type: "resume",
+      note,
+      redo,
+      same,
+      at: now(),
+      skipVerify: skipsVerifier(ledger.route, flagged),
+      tip: headOf(root, ledger.branch),
+      gate: gateOf(spec) !== null,
+      tier: buildTier(ctx, ledger),
+    },
+    root,
+  );
   if (res.dispatch?.role === "build") refuseAtWriterCap(root, spec);
   let next = res.ledger;
   if (ledger.route) next.route = { ...ledger.route, flagged };

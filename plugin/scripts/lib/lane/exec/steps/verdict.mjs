@@ -17,6 +17,7 @@ import {
   readReport,
   refuse,
   stepWith,
+  thenRun,
 } from "../lane.mjs";
 import {
   coveredBy,
@@ -34,12 +35,12 @@ export function run(ctx, id) {
   const ledger = mustLedger(root, id);
   if (expects(ledger) !== "verdict")
     refuse(
-      `the lane expects ${expects(ledger) ?? "nothing"} now, not a verdict (next is ${ledger.next})`,
+      `the lane expects ${expects(ledger) ?? "nothing"} now, not a verdict (next is ${ledger.next})${thenRun(root, ledger)}`,
     );
   const round = ledger.rounds.at(-1);
   if (ctx.from !== null) importReport(ctx.from, round.reportPath);
   const text = readReport(round.reportPath, "verifier");
-  const left = leftNotes(ctx, text, round);
+  const left = leftNotes(ctx, text, round, id);
   const tip = headOf(root, ledger.branch);
   // A recheck's facts, pinned on its round: every note sent back passed, and the tip moved only by fix
   // commits since the last verdict.
@@ -52,21 +53,25 @@ export function run(ctx, id) {
       : {};
   // The notes this verdict would leave open: a flagged item at the notes cap holds on them.
   const opened = round.step === "resolve" ? [] : openNotesOf(text, round, ledger.openNotes);
-  const res = stepWith(ledger, {
-    type: "verdict",
-    verdict: verdictOf(text),
-    report: round.reportPath,
-    agent,
-    summary: summaryOf(text),
-    tip,
-    gate: gateOf(spec) !== null,
-    tier: buildTier(ctx, ledger),
-    flagged: isFlagged(ctx, ledger),
-    openNotes: opened.length,
-    noteRounds: liveNotes(ctx),
-    at: now(),
-    ...facts,
-  });
+  const res = stepWith(
+    ledger,
+    {
+      type: "verdict",
+      verdict: verdictOf(text),
+      report: round.reportPath,
+      agent,
+      summary: summaryOf(text),
+      tip,
+      gate: gateOf(spec) !== null,
+      tier: buildTier(ctx, ledger),
+      flagged: isFlagged(ctx, ledger),
+      openNotes: opened.length,
+      noteRounds: liveNotes(ctx),
+      at: now(),
+      ...facts,
+    },
+    root,
+  );
   let next = res.ledger;
   if (left.length) next.left = [...(next.left ?? []), ...left];
   next.usedMemories = [...new Set([...(next.usedMemories ?? []), ...usedMemories(text)])];

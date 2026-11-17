@@ -8,24 +8,26 @@ import { now } from "../fmt.mjs";
 import { isAncestor } from "../land.mjs";
 import { verdicts } from "../rounds.mjs";
 import { git } from "../worktree.mjs";
-import { readOr, refuse } from "./lane.mjs";
+import { laneLine, readOr, refuse } from "./lane.mjs";
 
 // The notes-round cap as the workflow file says now: read at each call, not fixed at start.
 export const liveNotes = ({ spec }) => resolveWorkflow(spec).exec.noteRounds;
 
 // The notes `verdict --leave` leaves as built: `[{ label, by, at, round }]`, each a note of this report
 // (refused otherwise, before anything is written); none without --leave.
-export function leftNotes({ leave, by }, text, round) {
+export function leftNotes({ root, leave, by }, text, round, id) {
   if (leave === null) return [];
   const labels = [...new Set(leave.split(",").map((n) => n.trim().toUpperCase()))];
   if (!labels.every((n) => /^N\d+$/.test(n)))
     refuse(`--leave takes the verifier's note labels, like N2,N9 (got ${leave})`);
   const found = notesOf(text);
   const missing = labels.filter((n) => !found.has(n));
-  if (missing.length)
+  if (missing.length) {
+    const has = [...found.keys()];
     refuse(
-      `--leave: ${missing.join(", ")} not in the verifier's report ${round.reportPath} (it has ${[...found.keys()].join(", ") || "no N<number> notes"})`,
+      `--leave: ${missing.join(", ")} not in the verifier's report ${round.reportPath} (it has ${has.join(", ") || "no N<number> notes"})${has.length ? ` → ${laneLine(root, "verdict", id, ` --leave ${has.join(",")}`)}` : ""}`,
     );
+  }
   const at = now();
   return labels.map((label) => ({ label, by, at, round: round.n }));
 }

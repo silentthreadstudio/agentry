@@ -60,6 +60,7 @@ const BOARD_MD = `# Savers
 | F3   | todo   |         |
 | E1   | todo   |         |
 | G1   | todo   |         |
+| G2   | todo   |         |
 `;
 const TASKS_MD = `# Tasks
 
@@ -82,6 +83,10 @@ const TASKS_MD = `# Tasks
 ### G1 · Marked ⚑
 
 - **Owns:** \`g.txt\`. ⚑ Accept: g.txt exists.
+
+### G2 · Not marked
+
+- **Owns:** \`g.txt\`. Accept: g.txt exists; the contract says not ⚑, and No⚑ either.
 `;
 
 function repo() {
@@ -133,39 +138,78 @@ function askedLane(r, id = "F1") {
   return lane(r, ["report", id, "--agent", "builder-1"]).json;
 }
 
-test("report's todo line names exec fact; fact writes the section at the end of the brief and prints its path", () => {
+test("report's todo line names exec fact; fact lists the fact under ## Facts at the end of the brief and counts it", () => {
   const r = repo();
   const asked = askedLane(r);
   assert.equal(asked.next, "needs-context");
   assert.match(asked.todo, /exec fact F1 --root '[^']*' --text "<fact>"/);
   const brief = () => readFileSync(asked.brief, "utf8");
-  assert.doesNotMatch(brief(), /^## The fact$/m);
+  assert.doesNotMatch(brief(), /^## Facts$/m);
   const res = lane(r, ["fact", "F1", "--text", "the key is id"]);
   assert.equal(res.exit, 0, res.stderr);
   assert.equal(res.json.brief, asked.brief);
-  assert.ok(brief().endsWith("\n\n## The fact\n\nthe key is id\n"), brief());
+  assert.equal(res.json.facts, 1);
+  assert.match(brief(), /\n\n## Facts\n\n.*\n\n- the key is id\n$/s);
+  assert.deepEqual(
+    ledgerOf(r.root, "F1").facts.map((f) => f.text),
+    ["the key is id"],
+  );
 });
 
-test("a second fact replaces the section: the brief holds one", () => {
+test("a second fact adds to the list, the same text twice is kept once, and the brief holds one section", () => {
   const r = repo();
   const asked = askedLane(r);
   lane(r, ["fact", "F1", "--text", "alpha-fact"]);
-  assert.equal(lane(r, ["fact", "F1", "--text", "beta-fact"]).exit, 0);
+  lane(r, ["fact", "F1", "--text", "beta-fact"]);
+  const again = lane(r, ["fact", "F1", "--text", "alpha-fact"]);
+  assert.equal(again.json.facts, 2);
   const brief = readFileSync(asked.brief, "utf8");
-  assert.equal(brief.match(/^## The fact$/gm).length, 1);
-  assert.ok(brief.endsWith("\n\n## The fact\n\nbeta-fact\n"));
-  assert.doesNotMatch(brief, /alpha-fact/);
+  assert.equal(brief.match(/^## Facts$/gm).length, 1);
+  assert.ok(brief.endsWith("- alpha-fact\n- beta-fact\n"), brief);
 });
 
-test("fact is refused with no round asking for one, on a lane held for context, and with no text", () => {
+test("fact is accepted on a build round, and a fresh resume brief carries the facts", () => {
   const r = repo();
   const out = lane(r, ["start", "F1"]).json;
-  const building = lane(r, ["fact", "F1", "--text", "x"]);
-  assert.equal(building.exit, 2);
-  assert.match(building.stderr, /fact is for a needs-context round waiting for its builder/);
+  const res = lane(r, ["fact", "F1", "--text", "use two spaces"]);
+  assert.equal(res.exit, 0, res.stderr);
+  assert.match(readFileSync(out.brief, "utf8"), /## Facts\n[\s\S]*- use two spaces\n$/);
+  // Parked, then a fresh builder: its brief lists the same facts.
+  assert.equal(lane(r, ["hold", "F1", "--for", "later"]).exit, 0);
+  const resumed = lane(r, ["resume", "F1", "--note", "go on", "--fresh"]);
+  assert.equal(resumed.exit, 0, resumed.stderr);
+  assert.match(readFileSync(resumed.json.brief, "utf8"), /## Facts\n[\s\S]*- use two spaces\n$/);
+  assert.notEqual(resumed.json.brief, out.brief);
+});
+
+test("fact --clear empties the list and drops the section", () => {
+  const r = repo();
+  const asked = askedLane(r);
+  lane(r, ["fact", "F1", "--text", "alpha-fact"]);
+  const cleared = lane(r, ["fact", "F1", "--clear"]);
+  assert.equal(cleared.exit, 0, cleared.stderr);
+  assert.equal(cleared.json.facts, 0);
+  assert.doesNotMatch(readFileSync(asked.brief, "utf8"), /## Facts|alpha-fact/);
+  assert.equal(ledgerOf(r.root, "F1").facts, undefined);
+  assert.equal(lane(r, ["fact", "F1", "--clear", "--text", "x"]).exit, 2);
+});
+
+test("fact is refused on a verifier round, on a lane held for context, and with no text", () => {
+  const r = repo();
+  const out = lane(r, ["start", "F1"]).json;
   assert.equal(lane(r, ["fact", "F1"]).exit, 2);
   assert.equal(lane(r, ["fact", "F1", "--text", "  "]).exit, 2);
-  // Asked twice in the step: held for the context, whose answer is the resume.
+  build(out, "one.txt");
+  assert.equal(lane(r, ["report", "F1"]).json.role, "verify");
+  const verifying = lane(r, ["fact", "F1", "--text", "x"]);
+  assert.equal(verifying.exit, 2);
+  assert.match(verifying.stderr, /fact is for a builder round waiting for its report/);
+  assert.equal(ledgerOf(r.root, "F1").facts, undefined);
+});
+
+test("fact is refused on a lane held for context, naming the resume line", () => {
+  const r = repo();
+  const out = lane(r, ["start", "F1"]).json;
   writeFileSync(out.reportPath, "NEEDS_CONTEXT\nq\nused_memories: none\n");
   const second = lane(r, ["report", "F1"]).json;
   writeFileSync(second.reportPath, "NEEDS_CONTEXT\nq again\nused_memories: none\n");
@@ -207,7 +251,63 @@ test("start warns when the contract has ⚑ and the item's flag is empty, and no
   assert.equal(plain.warning, undefined);
 });
 
-// ---- --from (#133) ----------------------------------------------------------------------------
+test("start does not warn of a ⚑ written right after not or no", () => {
+  const r = repo();
+  assert.equal(lane(r, ["start", "G2"]).json.warning, undefined);
+});
+
+// ---- refusals name the step to run (R2d-1) ----------------------------------------------------
+
+test("a verdict asked of a lane that expects a report names the report line", () => {
+  const r = repo();
+  lane(r, ["start", "F1"]);
+  const early = lane(r, ["verdict", "F1"]);
+  assert.equal(early.exit, 2);
+  assert.match(
+    early.stderr,
+    /expects report now, not a verdict \(next is build\) → .*exec report F1 /,
+  );
+});
+
+test("close on a lane that is not done names the step next calls for", () => {
+  const r = repo();
+  const out = lane(r, ["start", "F1"]).json;
+  assert.match(
+    lane(r, ["close", "F1"]).stderr,
+    /not done \(state building, next build\) → .*exec report F1 /,
+  );
+  build(out, "one.txt");
+  const verify = lane(r, ["report", "F1"]).json;
+  writeFileSync(verify.reportPath, "All checked.\nused_memories: none\nVerdict: PASS\n");
+  assert.equal(lane(r, ["verdict", "F1"]).json.next, "gate");
+  assert.match(lane(r, ["close", "F1"]).stderr, /next gate\) → .*exec gate F1 /);
+});
+
+test("verdict --leave with a label the report lacks names the line with the labels it has", () => {
+  const r = repo();
+  const out = lane(r, ["start", "F1"]).json;
+  build(out, "one.txt");
+  const verify = lane(r, ["report", "F1"]).json;
+  writeFileSync(
+    verify.reportPath,
+    "N1 rename it\nN3 stale flag\nused_memories: none\nVerdict: FAIL\n",
+  );
+  const missing = lane(r, ["verdict", "F1", "--leave", "N2"]);
+  assert.equal(missing.exit, 2);
+  assert.match(missing.stderr, /\(it has N1, N3\) → .*exec verdict F1 .*--leave N1,N3$/m);
+});
+
+test("a step the round refuses with 'expects X, not a Y' names X's line", () => {
+  const r = repo();
+  lane(r, ["start", "F1"]);
+  assert.equal(lane(r, ["hold", "F1", "--for", "later"]).exit, 0);
+  const refused = lane(r, ["fix", "F1", "--notes", "N1"]);
+  assert.equal(refused.exit, 2);
+  assert.match(
+    refused.stderr,
+    /expects a resume, not a notes \(next is resume\) → .*exec resume F1 .*--note/,
+  );
+});
 
 test("report --from saves the file at the round's report path, then reads it", () => {
   const r = repo();

@@ -115,6 +115,18 @@ function factsLine(root, owned, block) {
   );
 }
 
+const FACTS = /^## Facts\n/gm;
+
+// `text` with its `## Facts` section (the last one, at the end) rewritten to list `facts`; the section
+// goes when there are none. The ledger's `facts[]` is the source, so every builder brief lists the same.
+export function withFacts(text, facts) {
+  const at = [...text.matchAll(FACTS)].at(-1)?.index;
+  const kept = at === undefined ? text : text.slice(0, at);
+  if (!facts?.length) return at === undefined ? text : `${kept.trimEnd()}\n`;
+  const items = facts.map((f) => `- ${f.text.replace(/\n/g, "\n  ")}`).join("\n");
+  return `${kept.trimEnd()}\n\n## Facts\n\nThe conductor's answers and facts for this contract. Use them: the fact you asked for is among them.\n\n${items}\n`;
+}
+
 // Render the brief for `dispatch` as round `n` and return the round's files.
 export function brief({ root, spec, model }, ledger, dispatch) {
   const n = ledger.rounds.length + 1;
@@ -231,6 +243,8 @@ export function brief({ root, spec, model }, ledger, dispatch) {
   if (n === 1 && fresh && ledger.adopted) text = withSection(text, adoptedWork(ledger.adopted));
   // The fact the owner supplied at a context hold goes where the conductor puts one: at the end.
   if (dispatch.fact) text = `${text.trimEnd()}\n\n## The fact\n\n${dispatch.fact}\n`;
+  // The facts kept with `exec fact` ride in every builder brief, last.
+  if (isBuilderBrief(dispatch.step)) text = withFacts(text, ledger.facts);
   writeFileSync(file, text);
   return { brief: file, reportPath: values.reportPath, tip, at: now() };
 }

@@ -68,14 +68,18 @@ export function run(ctx, id) {
     refuse(
       `main touched: ${touched}: run ${laneLine(root, "report", id)} (the report holds the lane for the guard)`,
     );
-  const res = stepWith(ledger, {
-    type: "hold",
-    for: holdFor,
-    evidence: evidence ?? (holdFor === "owner" ? round.reportPath : null),
-    at: now(),
-    ...(note && { why: note }),
-    ...(agent && { agent }),
-  });
+  const res = stepWith(
+    ledger,
+    {
+      type: "hold",
+      for: holdFor,
+      evidence: evidence ?? (holdFor === "owner" ? round.reportPath : null),
+      at: now(),
+      ...(note && { why: note }),
+      ...(agent && { agent }),
+    },
+    root,
+  );
   ledgers.write(root, res.ledger);
   return view(ctx, res.ledger, {
     step: "hold",

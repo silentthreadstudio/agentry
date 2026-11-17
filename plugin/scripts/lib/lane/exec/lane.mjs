@@ -10,7 +10,7 @@ import * as ledgers from "../../process/ledger.mjs";
 import { flaggedItem } from "../../process/spec/workflow.mjs";
 import { laneCommand } from "../commands.mjs";
 import { ownedFiles, withNew } from "../owns.mjs";
-import { step as advance } from "../rounds.mjs";
+import { step as advance, expects } from "../rounds.mjs";
 
 export class Refusal extends Error {}
 // A step that stopped with nothing written, and says why (exit 1): a gate whose lane moved while it ran.
@@ -70,11 +70,29 @@ export function readReport(path, who) {
   return text;
 }
 
-export function stepWith(ledger, event) {
+// The line to run now, for a refusal to end on: the step the lane expects (a report, verdict, gate, close
+// or the owner's resume), or the land when only that is left; "" when nothing can be run.
+export function nowLine(root, ledger) {
+  const want = expects(ledger);
+  if (want === "resume")
+    return laneLine(root, "resume", ledger.id, ' --note "<the owner\'s words>"');
+  if (want) return laneLine(root, want, ledger.id);
+  return ledger.next === "merge" ? `/agentry:merge ${ledger.id}` : "";
+}
+
+// ` → <line>` after a refusal that names the step to run instead.
+export const thenRun = (root, ledger) => {
+  const line = nowLine(root, ledger);
+  return line ? ` → ${line}` : "";
+};
+
+export function stepWith(ledger, event, root) {
   try {
     return advance(ledger, event);
   } catch (e) {
-    return refuse(`${e.message} (next is ${ledger.next})`);
+    return refuse(
+      `${e.message} (next is ${ledger.next})${/ expects /.test(e.message) ? thenRun(root, ledger) : ""}`,
+    );
   }
 }
 

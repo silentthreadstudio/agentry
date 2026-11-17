@@ -40,7 +40,7 @@ export function run(ctx, id) {
     refuse(
       `${used} of ${max} notes rounds are used (exec.noteRounds is ${max}; next is ${ledger.next}: ${laneLine(root, ledger.next === "close" ? "close" : "gate", id)} goes on with the notes open) → raise exec.noteRounds, or send it back on your word: ${byOwner}`,
     );
-  const res = stepWith(ledger, { type: "notes", notes: labels, noteRounds: max, at: now() });
+  const res = stepWith(ledger, { type: "notes", notes: labels, noteRounds: max, at: now() }, root);
   const verifier = verdicts(ledger).at(-1);
   const report = verifier ? readReport(verifier.reportPath, "verifier") : "";
   const found = withOpen(notesOf(report), ledger.openNotes);
@@ -98,7 +98,7 @@ function ownerFix(ctx, id) {
   )
     refuse(`fix --owner is for a verified lane: ${id} is ${ledger.state} (next ${ledger.next})`);
   refuseAtWriterCap(root, spec);
-  const res = stepWith(ledger, { type: "owner", note: owner, at: now() });
+  const res = stepWith(ledger, { type: "owner", note: owner, at: now() }, root);
   const next = dispatchNext(ctx, res.ledger, res.dispatch);
   next.nested = nestedTrees(root, next);
   ledgers.write(root, next);

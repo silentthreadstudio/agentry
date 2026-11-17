@@ -21,7 +21,7 @@ export function run(ctx, id) {
     refuse(
       `reverify is for a lane closed without a verifier: a verifier closed ${id} (${verdicts(ledger).at(-1).verdict})`,
     );
-  const res = stepWith(ledger, { type: "reverify" });
+  const res = stepWith(ledger, { type: "reverify" }, root);
   const next = dispatchNext(ctx, res.ledger, res.dispatch);
   next.nested = nestedTrees(root, next);
   ledgers.write(root, next);

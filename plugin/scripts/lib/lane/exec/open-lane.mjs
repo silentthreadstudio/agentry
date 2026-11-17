@@ -30,6 +30,9 @@ import { headOf, mainSnapshot } from "./guard/snapshot.mjs";
 import { contractFile, laneLine, readOr, refuse } from "./lane.mjs";
 import { stepLines, view } from "./view.mjs";
 
+// A ⚑ in the contract text that no "not" or "no" comes right before ("not ⚑" says the item is no flag).
+const NAMED_FLAG = /(?<!\b(?:not|no)\s*)⚑/iu;
+
 // The lane `start --on` stacks on: resolved like an id, a lane that is verified (any next), held or at
 // its gate, its own `on` allowed (a chain). `{ id, tip, state }`, the tip its branch is at now.
 export function stackParent({ root, spec, model, on }, id) {
@@ -245,7 +248,7 @@ export function openLane(ctx, id, { found, parent, mainBranch, again = null }) {
       ? `! owns is empty: the builder will stop to ask for each file; add them with \`${laneLine(root, "owns", id, " --add <paths> --apply")}\``
       : null;
   const unflagged =
-    !again && found.block.includes("⚑") && !ledger.route.flagged
+    !again && NAMED_FLAG.test(found.block) && !ledger.route.flagged
       ? "! the contract text has ⚑ but the board item's flag is empty: set it on the board, or exec.verify may send the work past its verifier"
       : null;
   const chain = parent ? chainOf(ledgers.list(root), parent.id) : [];
