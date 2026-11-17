@@ -68,6 +68,14 @@ export function run(ctx, id) {
     const { agent, ...rest } = dispatch;
     dispatch = { ...rest, mode: "fresh", ...(saved(stopped) && { stopped }) };
   }
+  // The owner's answer to a context hold is a fact like any other: kept in facts[], listed under
+  // `## Facts`, not a section of its own.
+  if (dispatch?.fact === note && ledger.hold?.for === "context") {
+    const kept = next.facts ?? [];
+    if (!kept.some((f) => f.text === note)) next.facts = [...kept, { text: note, at: now() }];
+    const { fact: _kept, ...rest } = dispatch;
+    dispatch = { ...rest, supplied: true };
+  }
   next = dispatchNext(ctx, next, dispatch);
   ledgers.write(root, next);
   const answer = next.holds.at(-1);

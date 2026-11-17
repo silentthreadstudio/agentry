@@ -35,7 +35,8 @@ The lane refused your last report ({{from}}): {{reason}}. Fix exactly that, then
 ## Supplied context
 
 You asked for a fact in {{from}}. If this brief ends with a section "The fact", that is the conductor's answer:
-use it and finish the contract. If it has no such section, no fact was supplied: report NEEDS_CONTEXT again
+use it and finish the contract. A section "Facts" at the end lists the facts the conductor kept for this
+lane (`exec fact` fills it): its entries are the answer too. If it has no such section, no fact was supplied: report NEEDS_CONTEXT again
 and say so. Anything else missing is NEEDS_CONTEXT again too, and the lane then holds for the owner.
 
 {{/needed}}

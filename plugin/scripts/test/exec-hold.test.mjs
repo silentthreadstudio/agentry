@@ -701,7 +701,7 @@ test("a two-step lane asking once in each step reaches verified, each ask re-dis
   ask(out);
   out = lane(r, "report", "T1", "--agent", "builder-1").json;
   assert.deepEqual([out.next, out.mode, out.agent], ["needs-context", "resume", "builder-1"]);
-  assert.match(out.todo, /^append the fact under "## The fact" at the end of /);
+  assert.match(out.todo, /^add the fact to "## Facts" at the end of /);
   build(out, "one.txt");
   out = lane(r, "report", "T1").json;
   assert.equal(out.state, "held");
@@ -877,7 +877,13 @@ test("asked again in one step: held for the context, nothing changed; resume sen
     brief,
     /## Supplied context\n\nYou asked for a fact in .*r2-needs-context\.report\.md/,
   );
-  assert.ok(brief.endsWith("\n## The fact\n\nthe key is `id` in three.txt\n"), brief);
+
+  assert.match(brief, /\n## Facts\n[\s\S]*\n- the key is `id` in three.txt\n$/);
+  assert.doesNotMatch(brief, /^## The fact$/m);
+  assert.deepEqual(
+    ledgerOf(r.root, "T3").facts.map((f) => f.text),
+    ["the key is `id` in three.txt"],
+  );
   assert.equal(ledgerOf(r.root, "T3").holds.at(-1).for, "context");
 });
 

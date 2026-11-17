@@ -160,9 +160,9 @@ export function view(ctx, ledger, { step, guards = [], nested = [], lead = {}, e
     });
     // `model` is the name a dispatch passes on; `modelFrom` where it came from (the text joins them).
     if (picked) Object.assign(out, { model: picked.model, modelFrom: picked.from });
-    // The owner's fact from a context hold is in the brief already.
-    if (round.step === "needs-context" && !round.resend && !round.fact)
-      out.todo = `append the fact under "## The fact" at the end of ${round.brief} (${laneLine(root, "fact", ledger.id, ' --text "<fact>"')} does it) before sending it; if the contract, the repo and memory don't hold it, ask the owner first${ownsHint(root, ledger, round.from)}`;
+    // The owner's fact from a context hold is in the brief already (under "## Facts").
+    if (round.step === "needs-context" && !round.resend && !round.fact && !round.supplied)
+      out.todo = `add the fact to "## Facts" at the end of ${round.brief} (${laneLine(root, "fact", ledger.id, ' --text "<fact>"')} does it) before sending it; if the contract, the repo and memory don't hold it, ask the owner first${ownsHint(root, ledger, round.from)}`;
     out.after = `${laneLine(root, waiting, ledger.id)} --agent <the agent's id>`;
   } else if (ledger.next === "gate" || ledger.next === "close") {
     out.run = laneLine(root, ledger.next, ledger.id);
