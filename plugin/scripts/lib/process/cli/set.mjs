@@ -4,20 +4,22 @@
 // recorded (`board-writes.mjs`) so a running lane's main-touched guard lets it through. Setting a kind's
 // parent field also moves the item's row from the old parent's file to the new parent's, for each
 // `create.rows` entry placed `in: "parent.file:<section>"`, in the same write; a new parent with no file
-// is refused, naming the file.
+// is refused, naming the file. `--commit ["<message>"]` also commits exactly this change
+// (`commit-edits.mjs`), leaving every other uncommitted line alone.
 //
 // run(argv, { root, spec, model }) -> { exit, out }   exit 0 = written or previewed, 2 = usage or refusal
 // (nothing written)
 import { join, relative } from "node:path";
 import { PREVIEW, refuse, renamed, usageError } from "../../cli/help.mjs";
 import { recorded } from "../board-writes.mjs";
+import { commitPlan, planCommit, takeCommit } from "../commit-edits.mjs";
 import { boardId } from "../ids.mjs";
 import { landInProgress, landRefusal } from "../ledger.mjs";
 import { escapesRoot, own } from "../spec/shape.mjs";
 import { WriteError, applyAll, insertRow, setCell, setKey, takeRow } from "../write.mjs";
 
 export const help = {
-  usage: "set <kind> <id> <field>=<value> [--apply] [--json]",
+  usage: 'set <kind> <id> <field>=<value> [--apply] [--commit ["<message>"]] [--json]',
   purpose: "Change one field of one item: its table cell, or its frontmatter key.",
   args: {
     "<kind>": "a kind the process file knows",
@@ -26,7 +28,9 @@ export const help = {
   },
   flags: {
     "--apply": "write it (without: say what it would write, and write nothing)",
-    "--json": "print { kind, id, field, value, file, applied } as one JSON object",
+    "--commit":
+      'commit exactly this change (default message "docs(board): set <kind> <id> <field>"), leaving other uncommitted lines alone; give it last, its message follows',
+    "--json": "print { kind, id, field, value, file, applied, commit } as one JSON object",
   },
   exits: { 0: "written, or previewed", 2: "usage, or refused (nothing written)" },
   example: "board set task T-4 status=blocked --apply",
@@ -108,7 +112,8 @@ function moveRows({ root, spec, model, kindName, kind, fieldName, field, value, 
   return { edits, notes };
 }
 
-export function run(argv, { root, spec, model }) {
+export function run(args, { root, spec, model }) {
+  const { argv, commit, message } = takeCommit(args);
   const [kindName, typed, assignment] = argv.filter((a) => !a.startsWith("--"));
   const write = argv.includes("--apply");
   const at = assignment?.indexOf("=") ?? -1;
@@ -155,6 +160,8 @@ export function run(argv, { root, spec, model }) {
     : (text) => setKey(text, { key: field.column, value });
   const target = join(root, spec.root, file);
   let moved;
+  let sha = null;
+  const commitMessage = message ?? `docs(board): set ${kindName} ${id} ${fieldName}`;
   try {
     moved = moveRows({
       root,
@@ -169,20 +176,27 @@ export function run(argv, { root, spec, model }) {
     });
     const edits = [{ file: target, edit: inFile(file, edit) }, ...moved.edits];
     const files = [...new Set(edits.map((e) => relative(root, e.file)))];
+    const plan = commit ? planCommit(root, edits) : null;
     if (write) recorded(root, files, `board set ${kindName} ${id}`, () => applyAll(edits));
     else applyAll(edits, { preview: true });
+    if (plan && write) sha = commitPlan(plan, commitMessage);
+    else if (plan)
+      moved.notes.push(
+        `would commit ${plan.files.map((f) => f.path).join(", ")}: ${commitMessage}`,
+      );
   } catch (error) {
     if (error instanceof WriteError) return fail(error.message);
     throw error;
   }
   if (argv.includes("--json")) {
-    const data = { kind: kindName, id, field: fieldName, value, file, applied: write };
+    const data = { kind: kindName, id, field: fieldName, value, file, applied: write, commit: sha };
     return {
       exit: 0,
       out: JSON.stringify(moved.notes.length ? { ...data, notes: moved.notes } : data),
     };
   }
   const line = `${kindName} ${id} ${fieldName}=${value} (${file})`;
+  if (sha) moved.notes.push(`committed ${sha.slice(0, 9)}: ${commitMessage}`);
   const notes = moved.notes.map((n) => `  ${n}`);
   return {
     exit: 0,

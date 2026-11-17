@@ -6,6 +6,8 @@
 // rows and the blocks that name `{parent.…}` are skipped, and the output says so. Without `--apply` it
 // runs the same edits and refusals, prints the lines each place would get, and writes nothing. A
 // write is recorded (`board-writes.mjs`) so a running lane's main-touched guard lets it through.
+// `--commit ["<message>"]` also commits exactly this change (`commit-edits.mjs`), leaving every other
+// uncommitted line alone.
 //
 // run(argv, { root, spec, model, today? }) -> { exit, out }   exit 0 = written or previewed, 2 = usage
 // or refusal
@@ -13,6 +15,7 @@ import { readFileSync } from "node:fs";
 import { join, relative, resolve } from "node:path";
 import { PREVIEW, refuse, renamed, usageError } from "../../cli/help.mjs";
 import { recorded } from "../board-writes.mjs";
+import { commitPlan, planCommit, takeCommit } from "../commit-edits.mjs";
 import { findContract } from "../contract.mjs";
 import { nextId } from "../ids.mjs";
 import { landInProgress, landRefusal } from "../ledger.mjs";
@@ -21,14 +24,17 @@ import { escapesRoot, own } from "../spec/shape.mjs";
 import { WriteError, addedLines, appendBlock, applyAll, insertRow } from "../write.mjs";
 
 export const help = {
-  usage: 'add <kind> --fields \'{"id": "…", …}\' [--apply] [--json]',
+  usage: 'add <kind> --fields \'{"id": "…", …}\' [--apply] [--commit ["<message>"]] [--json]',
   purpose: "Add one item at every create location of its kind, as one write or none.",
   args: { "<kind>": "a kind the process file knows, with a create rule" },
   flags: {
     "--fields <json|@path|->":
       "the item's fields as one JSON object, inline, from a file (@path) or from stdin (-); id optional when create.id is a pattern",
     "--apply": "write it (without: print each place and the lines it would get, write nothing)",
-    "--json": "print { kind, id, applied, notes, files: [{ file, added }] } as one JSON object",
+    "--commit":
+      'commit exactly this change (default message "docs(board): add <kind> <id>"), leaving other uncommitted lines alone; give it last, its message follows',
+    "--json":
+      "print { kind, id, applied, commit, notes, files: [{ file, added }] } as one JSON object",
   },
   exits: { 0: "written, or previewed", 2: "usage, or refused (nothing written)" },
   example: 'board add task --fields \'{"title": "Ship the CLI help", "sprint": "S2"}\' --apply',
@@ -59,10 +65,13 @@ export function fieldsText(arg) {
   }
 }
 
-export function run(argv, { root, spec, model, today = isoToday() }) {
+export function run(args, { root, spec, model, today = isoToday() }) {
+  const { argv, commit, message } = takeCommit(args);
   const kindName = argv.find((a) => !a.startsWith("--"));
   const write = argv.includes("--apply");
   let planned;
+  let sha = null;
+  let commitMessage = message;
   const json = argv[argv.indexOf("--fields") + 1];
   // Before 0.3 `--json '{…}'` carried the fields; now it only switches the output.
   if (
@@ -208,9 +217,15 @@ export function run(argv, { root, spec, model, today = isoToday() }) {
       );
     }
     const files = [...new Set(edits.map((e) => relative(root, e.file)))];
+    const plan = commit ? planCommit(root, edits) : null;
     planned = write
       ? recorded(root, files, `board add ${kindName} ${id}`, () => applyAll(edits))
       : applyAll(edits, { preview: true });
+    if (plan) {
+      commitMessage ||= `docs(board): add ${kindName} ${id}`;
+      if (write) sha = commitPlan(plan, commitMessage);
+      else notes.push(`would commit ${plan.files.map((f) => f.path).join(", ")}: ${commitMessage}`);
+    }
   } catch (error) {
     if (error instanceof WriteError) return fail(error.message);
     throw error;
@@ -227,8 +242,9 @@ export function run(argv, { root, spec, model, today = isoToday() }) {
   if (argv.includes("--json"))
     return {
       exit: 0,
-      out: JSON.stringify({ kind: kindName, id, applied: write, notes, files }),
+      out: JSON.stringify({ kind: kindName, id, applied: write, commit: sha, notes, files }),
     };
+  if (sha) notes.push(`committed ${sha.slice(0, 9)}: ${commitMessage}`);
   if (write)
     return { exit: 0, out: [`added ${kindName} ${id}`, ...notes.map((n) => `  ${n}`)].join("\n") };
   const lines = files.flatMap((f) => [`  ${f.file}:`, ...f.added.map((l) => `    + ${l}`)]);

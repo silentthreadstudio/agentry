@@ -36,9 +36,15 @@ until `--apply` (`agentry lane exec` and `agentry lane merge` steps excepted: wr
 | `explain` | per kind: found?, items, unmapped columns, unknown status words, unresolved refs; per rule: findings; the `lanes` block (what is wired, each ✓ or ✗ with its command) | nothing |
 | `contract <task id>` | the task's contract block (`--kind` for another kind); `ambiguous` when two real contracts match | nothing |
 | `next-id <kind>` | the next free id from the kind's `create.id` pattern | nothing |
-| `add <kind> --fields '<json>' [--apply]` | inserts the item at every `create` location; refuses a duplicate id | board files, with `--apply` |
-| `set <kind> <id> <field>=<value> [--apply]` | one mechanical field | board files, with `--apply` |
+| `add <kind> --fields '<json>' [--apply] [--commit ["<message>"]]` | inserts the item at every `create` location; refuses a duplicate id | board files, with `--apply` |
+| `set <kind> <id> <field>=<value> [--apply] [--commit ["<message>"]]` | one mechanical field | board files, with `--apply` |
 | `fix [--accept <id>] [--apply]` | fills mechanical drift, reports the rest | board files, with `--apply` |
+
+`--commit` (with `--apply`, given last) also commits exactly that command's change (default message
+`docs(board): add <kind> <id>` / `docs(board): set <kind> <id> <field>`), leaving every other uncommitted line
+of the same files, such as a running lane's `doing` cell, uncommitted in the working tree. It refuses, writing
+nothing, when something is already staged, a file is not tracked, or the edit needs lines not committed yet;
+when a hook fails the commit, the index is put back and the working-tree write stays. Only on the owner's ask.
 
 Pass user text to `--fields` as one single-quoted argument, with each `'` written as `'\''`. Show the
 script's output as printed; don't re-derive what it already computed.
